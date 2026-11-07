@@ -8,9 +8,16 @@ Aplicación local desarrollada con PHP, PostgreSQL, HTML, CSS y JavaScript nativ
 ## Funciones
 
 - El paciente crea una cuenta, consulta su afiliación e historia, ve sus citas y reserva un horario cuando está activo.
-- El médico consulta su agenda y registra el resultado de una cita de su agenda.
-- El administrador revisa afiliaciones, crea cuentas médicas y configura horarios.
+- El médico consulta sus citas pendientes. Al guardar el resultado, la cita pasa a Atendida y queda disponible en el historial del médico.
+- El administrador puede crear afiliados, corregir sus datos, revisar afiliaciones, crear cuentas médicas y configurar horarios.
+- Las categorías se asignan por ingreso: A hasta $1.000.000, B hasta $2.500.000 y C por encima de ese valor. El copago aumenta por categoría y tiene un tope de $10.000 por cita.
+- El formulario no muestra el costo base junto al servicio. Después de elegirlo, indica el copago estimado y filtra los horarios a la especialidad correspondiente.
+- El catálogo inicial contiene 16 servicios y 12 especialidades. Para especialidades sin agenda inicial, administración debe crear el médico y su horario.
+- La base incluye siete consultorios y siete médicos de demostración en medicina general, pediatría, odontología, cardiología, dermatología y ginecología.
+- Los formularios de registro muestran errores junto al campo mientras se escriben datos inválidos. El encabezado incluye una ventana de ayuda.
 - El pago se realiza por fuera del portal. Administración cambia el estado a Activo después de verificarlo.
+
+El proyecto maneja únicamente las categorías A, B y C; no intenta adivinar un régimen especial por el documento o el nombre del empleador. Si se necesitara una exención para funcionarios, tendría que asignarse explícitamente como una categoría o beneficio aparte.
 
 ## Requisitos
 
@@ -19,7 +26,7 @@ Aplicación local desarrollada con PHP, PostgreSQL, HTML, CSS y JavaScript nativ
 
 ## Instalación en una base nueva
 
-Si ya tienes una base anterior con tablas del mismo proyecto, **no ejecutes el nuevo SQL encima**. Conserva esa base y crea otra vacía, por ejemplo `eps_villavicencio_local`.
+Si ya tienes una base anterior con tablas del mismo proyecto, **no ejecutes el nuevo SQL encima**. Esta versión cambia las tarifas y relaciona los servicios con especialidades. Conserva la base anterior y crea una base vacía nueva, por ejemplo `eps_villavicencio_local`.
 
 ### 1. Crear la base de datos
 
@@ -34,6 +41,55 @@ sudo -u postgres psql -d eps_villavicencio_local -v ON_ERROR_STOP=1 -f proyecto.
 ```
 
 El script ordena y crea las tablas, roles y permisos funcionales, restricciones, funciones, disparadores y datos de ejemplo. La primera vez pedirá una contraseña para el usuario PostgreSQL `eps_app`; guárdala para el siguiente paso. El script se ejecuta una vez por cada base vacía.
+
+Si ya importaste la versión anterior del proyecto y quieres conservar esa base, **no vuelvas a ejecutar `proyecto.sql`**. Entra a la base actual y agrega los cuatro consultorios nuevos con este SQL; luego inicia sesión como administrador y crea los tres médicos indicados más abajo desde el formulario de cuentas médicas:
+
+```sql
+INSERT INTO consultorio (nombre, ubicacion, capacidad) VALUES
+    ('Consultorio 103', 'Piso 1', 2),
+    ('Consultorio 202', 'Piso 2', 2),
+    ('Consultorio 203', 'Piso 2', 2),
+    ('Consultorio 301', 'Piso 3', 2)
+ON CONFLICT (nombre) DO NOTHING;
+```
+
+Usa estos nombres, especialidades y consultorios en el formulario: Carolina Gil — Cardiología — Consultorio 202; Felipe Ruiz — Dermatología — Consultorio 203; Natalia Santos — Ginecología y obstetricia — Consultorio 301. Asigna a cada cuenta un usuario y contraseña temporal; después agrega sus horarios.
+
+Para actualizar únicamente el copago de una base ya creada, ejecuta también dentro de `psql`:
+
+```sql
+UPDATE tarifa
+   SET porcentaje_cobro = CASE nombre
+       WHEN 'Categoría A' THEN 0
+       WHEN 'Categoría B' THEN 5
+       WHEN 'Categoría C' THEN 10
+       ELSE porcentaje_cobro
+   END
+ WHERE nombre IN ('Categoría A', 'Categoría B', 'Categoría C');
+
+CREATE OR REPLACE FUNCTION calcular_valor_cita() RETURNS TRIGGER AS $$
+DECLARE
+    costo NUMERIC(10,2);
+    porcentaje NUMERIC(5,2);
+BEGIN
+    SELECT s.costo_base, t.porcentaje_cobro
+      INTO costo, porcentaje
+      FROM servicio s
+      JOIN pacientes p ON p.id_paciente = NEW.id_paciente
+      JOIN tarifa t ON t.id_tarifa = p.id_tarifa
+     WHERE s.id_servicio = NEW.id_servicio;
+
+    IF costo IS NULL OR porcentaje IS NULL THEN
+        RAISE EXCEPTION 'No se encontró el servicio o la tarifa del paciente.';
+    END IF;
+
+    NEW.valor_cobrado := LEAST(ROUND(costo * porcentaje / 100, 2), 10000.00);
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+```
+
+Esto actualiza la tarifa y el disparador sin volver a crear las tablas ni alterar los cobros de citas ya registradas.
 
 ### 3. Configurar la conexión en la misma terminal
 
@@ -62,10 +118,10 @@ Abre <http://127.0.0.1:8000>. Para detener el servidor, presiona `Ctrl+C`.
 
 ## Cuentas iniciales
 
-El SQL crea 20 cuentas de demostración: una administrativa, cuatro médicas y quince de pacientes. Todas usan la contraseña de acceso **`DemoEPS2026`**.
+El SQL crea 23 cuentas de demostración: una administrativa, siete médicas y quince de pacientes. Todas usan la contraseña de acceso **`DemoEPS2026`**.
 
 - Administración: `admin.eps`
-- Médicos: `diana.rojas`, `carlos.mejia`, `lucia.torres`, `andres.mora`
+- Médicos: `diana.rojas`, `carlos.mejia`, `lucia.torres`, `andres.mora`, `carolina.gil`, `felipe.ruiz`, `natalia.santos`
 - Pacientes: `ana.martinez`, `luis.gomez`, `laura.ramirez`, `miguel.perez`, `sofia.lopez`, `juan.hernandez`, `valentina.diaz`, `mateo.castillo`, `isabella.vargas`, `santiago.ruiz`, `camila.moreno`, `daniel.ortiz`, `gabriela.silva`, `samuel.reyes`, `mariana.castro`
 
 Son cuentas de muestra: cambia o elimina estos datos antes de usar la aplicación fuera de una demostración académica. Las cuentas nuevas de paciente comienzan con afiliación Pendiente.
@@ -112,6 +168,7 @@ erDiagram
     TARIFA ||--o{ PACIENTES : clasifica
     PACIENTES ||--|| HISTORIAL : tiene
     ESPECIALIDAD ||--o{ MEDICOS : especializa
+    ESPECIALIDAD ||--o{ SERVICIO : agrupa
     CONSULTORIO ||--o{ MEDICOS : asigna
     MEDICOS ||--o{ HORARIO : programa
     ESTADO ||--o{ HORARIO : clasifica

@@ -9,6 +9,7 @@ erDiagram
     TARIFA ||--o{ PACIENTES : clasifica
     PACIENTES ||--|| HISTORIAL : tiene
     ESPECIALIDAD ||--o{ MEDICOS : especializa
+    ESPECIALIDAD ||--o{ SERVICIO : agrupa
     CONSULTORIO ||--o{ MEDICOS : asigna
     MEDICOS ||--o{ HORARIO : programa
     ESTADO ||--o{ HORARIO : clasifica
@@ -83,6 +84,12 @@ erDiagram
         integer id_horario FK, UK
         smallint id_estado FK
         numeric valor_cobrado
+    }
+    SERVICIO {
+        smallint id_servicio PK
+        varchar nombre
+        numeric costo_base
+        smallint id_especialidad FK
     }
     RESULTADO_CONSULTA {
         integer id_resultado PK

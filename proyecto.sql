@@ -2,7 +2,7 @@
 -- EPS Villavicencio | Script único de creación y datos de ejemplo
 -- Ejecutar una vez en una base de datos vacía usando psql.
 -- Incluye el rol local de PostgreSQL, tablas, catálogos, permisos,
--- restricciones, funciones, disparadores y 20 cuentas de demostración.
+-- restricciones, funciones, disparadores y 23 cuentas de demostración.
 -- ================================================================
 
 -- 1. Cuenta de conexión local de la aplicación
@@ -73,16 +73,17 @@ CREATE TABLE tarifa (
     porcentaje_cobro NUMERIC(5,2) NOT NULL CHECK (porcentaje_cobro BETWEEN 0 AND 100)
 );
 
+CREATE TABLE especialidad (
+    id_especialidad SMALLSERIAL PRIMARY KEY,
+    nombre VARCHAR(80) NOT NULL UNIQUE
+);
+
 CREATE TABLE servicio (
     id_servicio SMALLSERIAL PRIMARY KEY,
     nombre VARCHAR(80) NOT NULL UNIQUE,
     descripcion TEXT,
-    costo_base NUMERIC(10,2) NOT NULL CHECK (costo_base >= 0)
-);
-
-CREATE TABLE especialidad (
-    id_especialidad SMALLSERIAL PRIMARY KEY,
-    nombre VARCHAR(80) NOT NULL UNIQUE
+    costo_base NUMERIC(10,2) NOT NULL CHECK (costo_base >= 0),
+    id_especialidad SMALLINT NOT NULL REFERENCES especialidad(id_especialidad)
 );
 
 CREATE TABLE consultorio (
@@ -193,26 +194,49 @@ INSERT INTO estado (ambito, nombre) VALUES
     ('cita', 'Cancelada');
 
 INSERT INTO tarifa (nombre, ingreso_min, ingreso_max, porcentaje_cobro) VALUES
-    ('Categoría A', 0, 1500000, 0),
-    ('Categoría B', 1500000.01, 3000000, 20),
-    ('Categoría C', 3000000.01, 50000000, 40),
-    ('Régimen especial', 0, 50000000, 0);
-
-INSERT INTO servicio (nombre, descripcion, costo_base) VALUES
-    ('Medicina general', 'Consulta médica general', 50000),
-    ('Pediatría', 'Atención de niñas y niños', 70000),
-    ('Odontología', 'Valoración odontológica', 60000);
+    ('Categoría A', 0, 1000000, 0),
+    ('Categoría B', 1000000.01, 2500000, 5),
+    ('Categoría C', 2500000.01, 9999999999.99, 10);
 
 INSERT INTO especialidad (nombre) VALUES
-    ('Medicina general'), ('Pediatría'), ('Odontología');
+    ('Medicina general'), ('Pediatría'), ('Odontología'),
+    ('Cardiología'), ('Dermatología'), ('Ginecología y obstetricia'),
+    ('Oftalmología'), ('Ortopedia'), ('Medicina interna'),
+    ('Psicología'), ('Nutrición'), ('Enfermería');
+
+INSERT INTO servicio (nombre, descripcion, costo_base, id_especialidad)
+SELECT datos.nombre, datos.descripcion, datos.costo, e.id_especialidad
+  FROM (VALUES
+    ('Medicina general', 'Consulta médica general', 50000::NUMERIC, 'Medicina general'),
+    ('Control de medicina general', 'Seguimiento de consulta general', 40000, 'Medicina general'),
+    ('Consulta preventiva', 'Valoración preventiva de salud', 45000, 'Medicina general'),
+    ('Pediatría', 'Atención médica infantil', 70000, 'Pediatría'),
+    ('Control de crecimiento y desarrollo', 'Seguimiento infantil', 60000, 'Pediatría'),
+    ('Odontología general', 'Valoración odontológica', 60000, 'Odontología'),
+    ('Limpieza dental', 'Profilaxis y limpieza dental', 80000, 'Odontología'),
+    ('Cardiología', 'Consulta de salud cardiovascular', 100000, 'Cardiología'),
+    ('Dermatología', 'Consulta de piel', 90000, 'Dermatología'),
+    ('Ginecología', 'Consulta ginecológica', 90000, 'Ginecología y obstetricia'),
+    ('Oftalmología', 'Valoración de salud visual', 85000, 'Oftalmología'),
+    ('Ortopedia', 'Valoración osteomuscular', 95000, 'Ortopedia'),
+    ('Medicina interna', 'Consulta de medicina interna', 90000, 'Medicina interna'),
+    ('Psicología', 'Consulta psicológica', 80000, 'Psicología'),
+    ('Nutrición', 'Consulta nutricional', 65000, 'Nutrición'),
+    ('Enfermería', 'Procedimientos básicos de enfermería', 35000, 'Enfermería')
+  ) AS datos(nombre, descripcion, costo, especialidad)
+  JOIN especialidad e ON e.nombre = datos.especialidad;
 
 INSERT INTO consultorio (nombre, ubicacion, capacidad) VALUES
     ('Consultorio 101', 'Piso 1', 3),
     ('Consultorio 102', 'Piso 1', 3),
-    ('Consultorio 201', 'Piso 2', 2);
+    ('Consultorio 201', 'Piso 2', 2),
+    ('Consultorio 103', 'Piso 1', 2),
+    ('Consultorio 202', 'Piso 2', 2),
+    ('Consultorio 203', 'Piso 2', 2),
+    ('Consultorio 301', 'Piso 3', 2);
 
 -- 6. Funciones y disparadores sencillos
--- La función calcula el valor de la cita desde el servicio y la tarifa.
+-- Calcula el copago por servicio y categoría, con un máximo de $10.000.
 CREATE FUNCTION calcular_valor_cita() RETURNS TRIGGER AS $$
 DECLARE
     costo NUMERIC(10,2);
@@ -229,7 +253,7 @@ BEGIN
         RAISE EXCEPTION 'No se encontró el servicio o la tarifa del paciente.';
     END IF;
 
-    NEW.valor_cobrado := ROUND(costo * porcentaje / 100, 2);
+    NEW.valor_cobrado := LEAST(ROUND(costo * porcentaje / 100, 2), 10000.00);
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
@@ -275,7 +299,7 @@ GRANT USAGE ON SCHEMA public TO eps_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO eps_app;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO eps_app;
 
--- 8. Veinte cuentas iniciales: un administrador, cuatro médicos y quince pacientes.
+-- 8. Veintitrés cuentas iniciales: un administrador, siete médicos y quince pacientes.
 -- Todas usan la contraseña de demostración: DemoEPS2026
 INSERT INTO usuarios (username, password_hash, id_rol)
 SELECT datos.username,
@@ -285,6 +309,8 @@ SELECT datos.username,
     ('admin.eps', 'administrador'),
     ('diana.rojas', 'medico'), ('carlos.mejia', 'medico'),
     ('lucia.torres', 'medico'), ('andres.mora', 'medico'),
+    ('carolina.gil', 'medico'), ('felipe.ruiz', 'medico'),
+    ('natalia.santos', 'medico'),
     ('ana.martinez', 'paciente'), ('luis.gomez', 'paciente'),
     ('laura.ramirez', 'paciente'), ('miguel.perez', 'paciente'),
     ('sofia.lopez', 'paciente'), ('juan.hernandez', 'paciente'),
@@ -296,7 +322,7 @@ SELECT datos.username,
   ) AS datos(username, rol)
   JOIN roles r ON r.codigo = datos.rol;
 
--- Perfiles de los cuatro médicos de demostración.
+-- Perfiles de los siete médicos de demostración.
 INSERT INTO medicos (id_usuario, id_tipo_doc, num_doc, nombre1, apellido1, telefono, correo, id_especialidad, id_consultorio)
 SELECT u.id_usuario, td.id_tipo_doc, datos.documento, datos.nombre, datos.apellido,
        '3005550100', datos.username || '@eps.local', e.id_especialidad, c.id_consultorio
@@ -304,7 +330,10 @@ SELECT u.id_usuario, td.id_tipo_doc, datos.documento, datos.nombre, datos.apelli
     ('diana.rojas', '90000001', 'Diana', 'Rojas', 'Medicina general', 'Consultorio 101'),
     ('carlos.mejia', '90000002', 'Carlos', 'Mejía', 'Pediatría', 'Consultorio 102'),
     ('lucia.torres', '90000003', 'Lucía', 'Torres', 'Odontología', 'Consultorio 201'),
-    ('andres.mora', '90000004', 'Andrés', 'Mora', 'Medicina general', 'Consultorio 101')
+    ('andres.mora', '90000004', 'Andrés', 'Mora', 'Medicina general', 'Consultorio 101'),
+    ('carolina.gil', '90000005', 'Carolina', 'Gil', 'Cardiología', 'Consultorio 202'),
+    ('felipe.ruiz', '90000006', 'Felipe', 'Ruiz', 'Dermatología', 'Consultorio 203'),
+    ('natalia.santos', '90000007', 'Natalia', 'Santos', 'Ginecología y obstetricia', 'Consultorio 301')
   ) AS datos(username, documento, nombre, apellido, especialidad, consultorio)
   JOIN usuarios u ON u.username = datos.username
   JOIN tipo_documento td ON td.sigla = 'CC'
@@ -315,21 +344,22 @@ SELECT u.id_usuario, td.id_tipo_doc, datos.documento, datos.nombre, datos.apelli
 INSERT INTO pacientes (id_usuario, id_tipo_doc, num_doc, nombre1, apellido1, fecha_nacimiento, telefono, correo, direccion, ingreso_mensual, id_tarifa, estado_afiliacion)
 SELECT u.id_usuario, td.id_tipo_doc, datos.documento, datos.nombre, datos.apellido,
        DATE '1995-01-01' + datos.n, '300555' || lpad(datos.n::text, 4, '0'),
-       datos.username || '@correo.local', 'Villavicencio', 1200000,
-       (SELECT id_tarifa FROM tarifa WHERE nombre='Categoría A'),
+       datos.username || '@correo.local', 'Villavicencio', datos.ingreso,
+       t.id_tarifa,
        CASE WHEN datos.n <= 10 THEN 'Activo' ELSE 'Pendiente' END
   FROM (VALUES
-    ('ana.martinez','10000001','Ana','Martínez',1), ('luis.gomez','10000002','Luis','Gómez',2),
-    ('laura.ramirez','10000003','Laura','Ramírez',3), ('miguel.perez','10000004','Miguel','Pérez',4),
-    ('sofia.lopez','10000005','Sofía','López',5), ('juan.hernandez','10000006','Juan','Hernández',6),
-    ('valentina.diaz','10000007','Valentina','Díaz',7), ('mateo.castillo','10000008','Mateo','Castillo',8),
-    ('isabella.vargas','10000009','Isabella','Vargas',9), ('santiago.ruiz','10000010','Santiago','Ruiz',10),
-    ('camila.moreno','10000011','Camila','Moreno',11), ('daniel.ortiz','10000012','Daniel','Ortiz',12),
-    ('gabriela.silva','10000013','Gabriela','Silva',13), ('samuel.reyes','10000014','Samuel','Reyes',14),
-    ('mariana.castro','10000015','Mariana','Castro',15)
-  ) AS datos(username, documento, nombre, apellido, n)
+    ('ana.martinez','10000001','Ana','Martínez',1,800000), ('luis.gomez','10000002','Luis','Gómez',2,800000),
+    ('laura.ramirez','10000003','Laura','Ramírez',3,800000), ('miguel.perez','10000004','Miguel','Pérez',4,800000),
+    ('sofia.lopez','10000005','Sofía','López',5,800000), ('juan.hernandez','10000006','Juan','Hernández',6,1800000),
+    ('valentina.diaz','10000007','Valentina','Díaz',7,1800000), ('mateo.castillo','10000008','Mateo','Castillo',8,1800000),
+    ('isabella.vargas','10000009','Isabella','Vargas',9,1800000), ('santiago.ruiz','10000010','Santiago','Ruiz',10,1800000),
+    ('camila.moreno','10000011','Camila','Moreno',11,3200000), ('daniel.ortiz','10000012','Daniel','Ortiz',12,3200000),
+    ('gabriela.silva','10000013','Gabriela','Silva',13,3200000), ('samuel.reyes','10000014','Samuel','Reyes',14,3200000),
+    ('mariana.castro','10000015','Mariana','Castro',15,3200000)
+  ) AS datos(username, documento, nombre, apellido, n, ingreso)
   JOIN usuarios u ON u.username = datos.username
-  JOIN tipo_documento td ON td.sigla = 'CC';
+  JOIN tipo_documento td ON td.sigla = 'CC'
+  JOIN tarifa t ON datos.ingreso BETWEEN t.ingreso_min AND t.ingreso_max;
 
 INSERT INTO historial (id_paciente, alergias, grupo_sanguineo, antecedentes)
 SELECT id_paciente, 'Sin alergias registradas', 'O+', 'Sin antecedentes registrados'
@@ -340,7 +370,8 @@ INSERT INTO horario (id_medico, fecha, hora_inicio, hora_fin, id_estado)
 SELECT m.id_medico, CURRENT_DATE + 1, TIME '08:00' + (g.slot * INTERVAL '1 hour'),
        TIME '09:00' + (g.slot * INTERVAL '1 hour'),
        (SELECT id_estado FROM estado WHERE ambito='horario' AND nombre='Disponible')
-  FROM medicos m CROSS JOIN generate_series(0, 2) AS g(slot);
+  FROM medicos m CROSS JOIN generate_series(0, 2) AS g(slot)
+ ORDER BY m.id_medico, g.slot;
 
 INSERT INTO cita (id_paciente, id_servicio, id_horario, id_estado)
 SELECT p.id_paciente, s.id_servicio, h.id_horario,
@@ -359,3 +390,5 @@ COMMENT ON TABLE pacientes IS 'Datos personales y estado de afiliación de cada 
 COMMENT ON COLUMN pacientes.estado_afiliacion IS 'Pendiente hasta que la EPS confirme el pago externo.';
 COMMENT ON TABLE medicos IS 'Datos personales y profesionales de cada médico.';
 COMMENT ON TABLE cita IS 'Reserva de un paciente para un servicio y horario.';
+COMMENT ON COLUMN servicio.costo_base IS 'Costo base interno usado para calcular el copago; no se muestra antes de elegir el servicio.';
+COMMENT ON COLUMN servicio.id_especialidad IS 'Especialidad médica que presta el servicio y permite filtrar sus horarios.';
