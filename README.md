@@ -1,69 +1,146 @@
 # 🏥 EPS Villavicencio
-### Portal académico de citas médicas y afiliaciones
+### Proyecto académico de citas médicas
 
-Aplicación web académica con PHP y PostgreSQL. Los datos son de demostración; no registres información clínica real.
+Aplicación local desarrollada con PHP, PostgreSQL, HTML, CSS y JavaScript nativo. El servidor se ejecuta en `127.0.0.1` y solo se abre en este computador.
 
-## Funciones por perfil
+> Los nombres y datos iniciales son ficticios. No ingreses información clínica real.
 
-| Perfil | Permisos principales |
-|---|---|
-| Paciente | Consulta su perfil, afiliación, historia y citas; agenda una cita disponible si está activo. |
-| Médico | Consulta su agenda y los datos de pacientes que atiende; registra el resultado de su cita. |
-| Administrador | Gestiona afiliaciones, perfiles médicos, horarios y registros de la EPS. |
+## Funciones
 
-La afiliación comienza en estado `Pendiente`. La página no procesa pagos; administración la activa cuando confirma el pago externo.
+- El paciente crea una cuenta, consulta su afiliación e historia, ve sus citas y reserva un horario cuando está activo.
+- El médico consulta su agenda y registra el resultado de una cita de su agenda.
+- El administrador revisa afiliaciones, crea cuentas médicas y configura horarios.
+- El pago se realiza por fuera del portal. Administración cambia el estado a Activo después de verificarlo.
 
 ## Requisitos
 
-- Linux, PHP 8.2 con `pdo_pgsql` y PostgreSQL 14 o superior.
-- Extensiones PostgreSQL `btree_gist` y `pgcrypto`.
+- Linux, PHP 8.2 o superior con `pdo` y `pdo_pgsql`.
+- PostgreSQL 14 o superior.
 
-## Instalación en una base vacía
+## Instalación en una base nueva
+
+Si ya tienes una base anterior con tablas del mismo proyecto, **no ejecutes el nuevo SQL encima**. Conserva esa base y crea otra vacía, por ejemplo `eps_villavicencio_local`.
+
+### 1. Crear la base de datos
 
 ```bash
-sudo -u postgres createdb eps_villavicencio
-sudo -u postgres psql -d postgres -f crear_usuario_app.sql
-sudo -u postgres psql -d eps_villavicencio -v ON_ERROR_STOP=1 -f proyecto.sql
-sudo -u postgres psql -d eps_villavicencio -f crear_administrador.sql
+sudo -u postgres createdb eps_villavicencio_local
 ```
 
-Los dos primeros roles de conexión que solicita `crear_usuario_app.sql` son `eps_app` y `eps_admin`. No son superusuarios. `crear_administrador.sql` solicita el usuario y la contraseña iniciales del portal.
+### 2. Ejecutar el único archivo SQL
 
-Configura las variables `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_ADMIN_USER` y `DB_ADMIN_PASSWORD`. También se puede usar `DATABASE_URL` para host, puerto, base y SSL. No guardes contraseñas en GitHub.
+```bash
+sudo -u postgres psql -d eps_villavicencio_local -v ON_ERROR_STOP=1 -f proyecto.sql
+```
 
-Inicia desde esta carpeta:
+El script ordena y crea las tablas, roles y permisos funcionales, restricciones, funciones, disparadores y datos de ejemplo. La primera vez pedirá una contraseña para el usuario PostgreSQL `eps_app`; guárdala para el siguiente paso. El script se ejecuta una vez por cada base vacía.
+
+### 3. Configurar la conexión en la misma terminal
+
+```bash
+cd ~/Descargas/Proyectofinal-bases
+export DB_HOST=127.0.0.1
+export DB_PORT=5432
+export DB_NAME=eps_villavicencio_local
+export DB_USER=eps_app
+read -s -p "Contraseña PostgreSQL de eps_app: " DB_PASSWORD
+export DB_PASSWORD
+echo
+```
+
+La contraseña se escribe sin mostrarse en pantalla. Las variables duran mientras esa terminal siga abierta.
+
+### 4. Iniciar la página solo en el computador local
+
+En esa misma terminal ejecuta:
 
 ```bash
 php -S 127.0.0.1:8000
 ```
 
-Abre <http://127.0.0.1:8000>.
+Abre <http://127.0.0.1:8000>. Para detener el servidor, presiona `Ctrl+C`.
 
-## Seguridad de base de datos
+## Cuentas iniciales
 
-- `roles` y `usuarios` separan el inicio de sesión de los perfiles personales `pacientes` y `medicos`.
-- RLS restringe las filas visibles. Pacientes y médicos no reciben permisos DML directos sobre tablas.
-- Reservar cita, guardar resultado y aprobar afiliación son funciones SQL con validaciones propias.
-- Las contraseñas se almacenan con `pgcrypto`; PostgreSQL conserva el hash de un token aleatorio para validar la sesión.
-- Las conexiones de PostgreSQL nunca llegan al navegador; deben permanecer privadas y configuradas como secretos del servicio.
+El SQL crea 20 cuentas de demostración: una administrativa, cuatro médicas y quince de pacientes. Todas usan la contraseña de acceso **`DemoEPS2026`**.
 
-## Archivos
+- Administración: `admin.eps`
+- Médicos: `diana.rojas`, `carlos.mejia`, `lucia.torres`, `andres.mora`
+- Pacientes: `ana.martinez`, `luis.gomez`, `laura.ramirez`, `miguel.perez`, `sofia.lopez`, `juan.hernandez`, `valentina.diaz`, `mateo.castillo`, `isabella.vargas`, `santiago.ruiz`, `camila.moreno`, `daniel.ortiz`, `gabriela.silva`, `samuel.reyes`, `mariana.castro`
 
-| Archivo | Uso |
+Son cuentas de muestra: cambia o elimina estos datos antes de usar la aplicación fuera de una demostración académica. Las cuentas nuevas de paciente comienzan con afiliación Pendiente.
+
+## Roles y permisos explicados
+
+La tabla `roles` contiene Paciente, Médico y Administrador. La tabla `permisos` enumera acciones; `rol_permiso` indica qué acciones tiene cada perfil. PHP consulta esa relación antes de procesar las acciones del usuario. Pacientes y médicos tienen pantallas y acciones limitadas; administración tiene las herramientas de gestión.
+
+Para la conexión local, PostgreSQL usa un solo usuario de aplicación, `eps_app`, con permisos `SELECT`, `INSERT`, `UPDATE` y `DELETE` sobre las tablas del proyecto. La separación por paciente, médico y administrador se aplica en la aplicación PHP mediante las tablas de roles y permisos.
+
+## Abrir y revisar la base de datos
+
+Puedes entrar a PostgreSQL desde otra terminal:
+
+```bash
+sudo -u postgres psql -d eps_villavicencio_local
+```
+
+Comandos útiles dentro de `psql`:
+
+```sql
+\dt
+\d pacientes
+SELECT username, id_rol FROM usuarios;
+SELECT estado_afiliacion, COUNT(*) FROM pacientes GROUP BY estado_afiliacion;
+\q
+```
+
+`\dt` lista las tablas; `\d pacientes` describe columnas y restricciones; `SELECT` consulta los datos; `\q` cierra `psql`.
+
+## Modelo entidad-relación
+
+GitHub muestra el siguiente diagrama Mermaid directamente en este README:
+
+```mermaid
+erDiagram
+    ROLES ||--o{ USUARIOS : asigna
+    ROLES ||--o{ ROL_PERMISO : permite
+    PERMISOS ||--o{ ROL_PERMISO : incluye
+    USUARIOS ||--o| PACIENTES : perfil
+    USUARIOS ||--o| MEDICOS : perfil
+    TIPO_DOCUMENTO ||--o{ PACIENTES : identifica
+    TIPO_DOCUMENTO ||--o{ MEDICOS : identifica
+    TARIFA ||--o{ PACIENTES : clasifica
+    PACIENTES ||--|| HISTORIAL : tiene
+    ESPECIALIDAD ||--o{ MEDICOS : especializa
+    CONSULTORIO ||--o{ MEDICOS : asigna
+    MEDICOS ||--o{ HORARIO : programa
+    ESTADO ||--o{ HORARIO : clasifica
+    PACIENTES ||--o{ CITA : reserva
+    SERVICIO ||--o{ CITA : solicita
+    HORARIO ||--o| CITA : ocupa
+    ESTADO ||--o{ CITA : clasifica
+    CITA ||--o| RESULTADO_CONSULTA : recibe
+    MEDICOS ||--o{ RESULTADO_CONSULTA : registra
+```
+
+También se encuentra como fuente editable en [modelo_entidad_relacion.mmd](modelo_entidad_relacion.mmd).
+
+## Archivos principales
+
+| Archivo | Contenido |
 |---|---|
-| `proyecto.sql` | Tablas, restricciones, funciones, disparadores, RLS y catálogos. |
-| `crear_usuario_app.sql` | Roles funcionales de PostgreSQL y usuarios de conexión. |
-| `crear_administrador.sql` | Cuenta administrativa inicial del portal. |
-| `index.php`, `Database.php`, `config.php` | Interfaz, acceso y configuración PDO. |
-| `assets/app.css` | Diseño institucional adaptable. |
-| `modelo_entidad_relacion.mmd` | Diagrama ER en Mermaid. |
+| `proyecto.sql` | Único script de base de datos: estructura, permisos, disparadores y muestra de 20 usuarios. |
+| `index.php` | Formularios, validaciones y paneles por rol. |
+| `Database.php` y `config.php` | Conexión local de PHP con PostgreSQL. |
+| `assets/app.css` | Diseño institucional con bordes sutiles y tarjetas sencillas. |
+| `assets/ilustracion-familia.png` | Ilustración amplia del inicio de sesión. |
+| `modelo_entidad_relacion.mmd` | Diagrama entidad-relación editable. |
 | `Informe_Proyecto.docx` | Informe, objetivos, justificación y diccionario de datos. |
-| `Dockerfile`, `entrypoint.sh`, `render.yaml`, `DEPLOY.md` | Despliegue con contenedor en Render. |
 
-## Aviso de instalación
+## Validaciones destacadas
 
-`proyecto.sql` se ejecuta una sola vez en una base vacía; no convierte los datos del esquema anterior. Si ya tienes tablas existentes, respáldalas y crea una base nueva para esta versión.
-
-## Uso de índices
-
-PostgreSQL crea índices para claves primarias y restricciones `UNIQUE`. Antes de agregar más, evalúa las consultas con `EXPLAIN ANALYZE`.
+- Los nombres y apellidos no admiten números.
+- CC, TI y RC: solo dígitos, hasta 10 caracteres.
+- CE y PA: letras y números, hasta 20 caracteres.
+- Ingresos, costos y capacidad no pueden ser negativos.
+- Una cita ocupa un único horario; un disparador calcula el valor y otro actualiza el estado del horario.

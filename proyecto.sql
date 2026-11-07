@@ -1,228 +1,361 @@
--- EPS Villavicencio: esquema normalizado, funciones de negocio y RBAC/RLS.
--- Ejecutar en una base de datos vacía después de crear roles con crear_usuario_app.sql.
-CREATE EXTENSION IF NOT EXISTS btree_gist;
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+-- ================================================================
+-- EPS Villavicencio | Script único de creación y datos de ejemplo
+-- Ejecutar una vez en una base de datos vacía usando psql.
+-- Incluye el rol local de PostgreSQL, tablas, catálogos, permisos,
+-- restricciones, funciones, disparadores y 20 cuentas de demostración.
+-- ================================================================
 
+-- 1. Cuenta de conexión local de la aplicación
+-- PostgreSQL pedirá la contraseña en la terminal.
+SELECT 'CREATE ROLE eps_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE'
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'eps_app') \gexec
+\password eps_app
+
+-- 2. Roles funcionales y permisos de la aplicación
 CREATE TABLE roles (
- id_rol SMALLSERIAL PRIMARY KEY,
- codigo VARCHAR(24) NOT NULL UNIQUE CHECK (codigo IN ('paciente','medico','administrador')),
- nombre VARCHAR(60) NOT NULL
+    id_rol SMALLSERIAL PRIMARY KEY,
+    codigo VARCHAR(20) NOT NULL UNIQUE,
+    nombre VARCHAR(50) NOT NULL
 );
-INSERT INTO roles(codigo,nombre) VALUES ('paciente','Paciente'),('medico','Médico'),('administrador','Administrador');
+
+CREATE TABLE permisos (
+    id_permiso SMALLSERIAL PRIMARY KEY,
+    codigo VARCHAR(40) NOT NULL UNIQUE,
+    descripcion VARCHAR(150) NOT NULL
+);
+
+CREATE TABLE rol_permiso (
+    id_rol SMALLINT NOT NULL REFERENCES roles(id_rol),
+    id_permiso SMALLINT NOT NULL REFERENCES permisos(id_permiso),
+    PRIMARY KEY (id_rol, id_permiso)
+);
+
+INSERT INTO roles (codigo, nombre) VALUES
+    ('paciente', 'Paciente'),
+    ('medico', 'Médico'),
+    ('administrador', 'Administrador');
+
+INSERT INTO permisos (codigo, descripcion) VALUES
+    ('ver_datos_propios', 'Consultar los datos propios'),
+    ('reservar_cita', 'Reservar una franja disponible'),
+    ('ver_agenda', 'Consultar la agenda médica propia'),
+    ('registrar_resultado', 'Registrar el resultado de una cita propia'),
+    ('gestionar_pacientes', 'Consultar y actualizar afiliaciones'),
+    ('gestionar_medicos', 'Crear y actualizar perfiles médicos'),
+    ('gestionar_horarios', 'Crear y actualizar horarios de atención');
+
+INSERT INTO rol_permiso (id_rol, id_permiso)
+SELECT r.id_rol, p.id_permiso
+FROM roles r CROSS JOIN permisos p
+WHERE (r.codigo = 'paciente' AND p.codigo IN ('ver_datos_propios', 'reservar_cita'))
+   OR (r.codigo = 'medico' AND p.codigo IN ('ver_agenda', 'registrar_resultado'))
+   OR (r.codigo = 'administrador' AND p.codigo IN ('gestionar_pacientes', 'gestionar_medicos', 'gestionar_horarios'));
+
+-- 3. Tablas de catálogo
+CREATE TABLE tipo_documento (
+    id_tipo_doc SMALLSERIAL PRIMARY KEY,
+    sigla VARCHAR(5) NOT NULL UNIQUE,
+    nombre VARCHAR(60) NOT NULL
+);
+
+CREATE TABLE estado (
+    id_estado SMALLSERIAL PRIMARY KEY,
+    ambito VARCHAR(20) NOT NULL,
+    nombre VARCHAR(30) NOT NULL,
+    UNIQUE (ambito, nombre)
+);
+
+CREATE TABLE tarifa (
+    id_tarifa SMALLSERIAL PRIMARY KEY,
+    nombre VARCHAR(50) NOT NULL UNIQUE,
+    ingreso_min NUMERIC(12,2) NOT NULL CHECK (ingreso_min >= 0),
+    ingreso_max NUMERIC(12,2) NOT NULL CHECK (ingreso_max >= ingreso_min),
+    porcentaje_cobro NUMERIC(5,2) NOT NULL CHECK (porcentaje_cobro BETWEEN 0 AND 100)
+);
+
+CREATE TABLE servicio (
+    id_servicio SMALLSERIAL PRIMARY KEY,
+    nombre VARCHAR(80) NOT NULL UNIQUE,
+    descripcion TEXT,
+    costo_base NUMERIC(10,2) NOT NULL CHECK (costo_base >= 0)
+);
+
+CREATE TABLE especialidad (
+    id_especialidad SMALLSERIAL PRIMARY KEY,
+    nombre VARCHAR(80) NOT NULL UNIQUE
+);
+
+CREATE TABLE consultorio (
+    id_consultorio SMALLSERIAL PRIMARY KEY,
+    nombre VARCHAR(50) NOT NULL UNIQUE,
+    ubicacion VARCHAR(100) NOT NULL,
+    capacidad SMALLINT NOT NULL CHECK (capacidad >= 0)
+);
+
+-- 4. Credenciales y perfiles personales
 CREATE TABLE usuarios (
- id_usuario BIGSERIAL PRIMARY KEY, username VARCHAR(80) NOT NULL UNIQUE,
- password_hash TEXT NOT NULL, id_rol SMALLINT NOT NULL REFERENCES roles,
- activo BOOLEAN NOT NULL DEFAULT TRUE, creado_en TIMESTAMPTZ NOT NULL DEFAULT now(),
- CHECK (length(username) BETWEEN 4 AND 80)
+    id_usuario SERIAL PRIMARY KEY,
+    username VARCHAR(50) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    id_rol SMALLINT NOT NULL REFERENCES roles(id_rol),
+    activo BOOLEAN NOT NULL DEFAULT TRUE
 );
-CREATE TABLE sesiones_app (
- token_hash CHAR(64) PRIMARY KEY, id_usuario BIGINT NOT NULL REFERENCES usuarios ON DELETE CASCADE,
- expira_en TIMESTAMPTZ NOT NULL
-);
-CREATE TABLE tipo_documento(id_tipo_doc SMALLSERIAL PRIMARY KEY,sigla VARCHAR(10) NOT NULL UNIQUE,nombre VARCHAR(100) NOT NULL);
-CREATE TABLE estado(id_estado SMALLSERIAL PRIMARY KEY,nombre VARCHAR(40) NOT NULL,ambito VARCHAR(24) NOT NULL CHECK(ambito IN ('consultorio','horario','cita')),UNIQUE(ambito,nombre));
-CREATE TABLE tarifa(id_tarifa SMALLSERIAL PRIMARY KEY,nombre VARCHAR(60) NOT NULL UNIQUE,ingreso_min NUMERIC(12,2) NOT NULL CHECK(ingreso_min>=0),ingreso_max NUMERIC(12,2) NOT NULL CHECK(ingreso_max>=ingreso_min),porcentaje_cobro NUMERIC(5,2) NOT NULL CHECK(porcentaje_cobro BETWEEN 0 AND 100));
-CREATE TABLE servicio(id_servicio SMALLSERIAL PRIMARY KEY,nombre VARCHAR(100) NOT NULL UNIQUE,descripcion TEXT,costo_base NUMERIC(10,2) NOT NULL CHECK(costo_base>=0));
-CREATE TABLE especialidad(id_especialidad SMALLSERIAL PRIMARY KEY,nombre VARCHAR(100) NOT NULL UNIQUE,descripcion TEXT);
-CREATE TABLE consultorio(id_consultorio BIGSERIAL PRIMARY KEY,nombre VARCHAR(50) NOT NULL UNIQUE,ubicacion VARCHAR(100) NOT NULL,capacidad INT NOT NULL CHECK(capacidad>=0),id_estado SMALLINT NOT NULL REFERENCES estado);
-CREATE TABLE consultorio_especialidad(id_consultorio BIGINT NOT NULL REFERENCES consultorio ON DELETE CASCADE,id_especialidad SMALLINT NOT NULL REFERENCES especialidad ON DELETE CASCADE,PRIMARY KEY(id_consultorio,id_especialidad));
-CREATE TABLE pacientes(
- id_paciente BIGSERIAL PRIMARY KEY,id_usuario BIGINT NOT NULL UNIQUE REFERENCES usuarios ON DELETE CASCADE,
- id_tipo_doc SMALLINT NOT NULL REFERENCES tipo_documento,id_tarifa SMALLINT REFERENCES tarifa,
- num_doc VARCHAR(20) NOT NULL,nombre1 VARCHAR(50) NOT NULL,nombre2 VARCHAR(50),apellido1 VARCHAR(50) NOT NULL,apellido2 VARCHAR(50),
- sexo VARCHAR(15),fecha_nacimiento DATE NOT NULL CHECK(fecha_nacimiento<=CURRENT_DATE),telefono VARCHAR(20),correo VARCHAR(100),direccion VARCHAR(150),
- ingreso_mensual NUMERIC(12,2) NOT NULL CHECK(ingreso_mensual>=0),
- estado_afiliacion VARCHAR(12) NOT NULL DEFAULT 'Pendiente' CHECK(estado_afiliacion IN ('Pendiente','Activo','Inactivo')),
- UNIQUE(id_tipo_doc,num_doc)
-);
-CREATE TABLE medicos(
- id_medico BIGSERIAL PRIMARY KEY,id_usuario BIGINT NOT NULL UNIQUE REFERENCES usuarios ON DELETE CASCADE,
- id_tipo_doc SMALLINT NOT NULL REFERENCES tipo_documento,num_doc VARCHAR(20) NOT NULL,
- nombre1 VARCHAR(50) NOT NULL,nombre2 VARCHAR(50),apellido1 VARCHAR(50) NOT NULL,apellido2 VARCHAR(50),
- correo VARCHAR(100),telefono VARCHAR(20),id_especialidad SMALLINT NOT NULL REFERENCES especialidad,
- id_consultorio BIGINT REFERENCES consultorio ON DELETE SET NULL,UNIQUE(id_tipo_doc,num_doc)
-);
-CREATE TABLE historial(
- id_historial BIGSERIAL PRIMARY KEY,id_paciente BIGINT NOT NULL UNIQUE REFERENCES pacientes ON DELETE CASCADE,
- fecha_apertura DATE NOT NULL DEFAULT CURRENT_DATE,alergias TEXT,grupo_sanguineo VARCHAR(5),antecedentes TEXT,observaciones TEXT
-);
-CREATE TABLE horario(
- id_horario BIGSERIAL PRIMARY KEY,id_medico BIGINT NOT NULL REFERENCES medicos ON DELETE RESTRICT,
- fecha DATE NOT NULL,hora_inicio TIME NOT NULL,hora_fin TIME NOT NULL CHECK(hora_fin>hora_inicio),
- id_estado SMALLINT NOT NULL REFERENCES estado,
- EXCLUDE USING gist(id_medico WITH =,tsrange((fecha+hora_inicio)::timestamp,(fecha+hora_fin)::timestamp,'[)') WITH &&)
-);
-CREATE TABLE cita(
- id_cita BIGSERIAL PRIMARY KEY,id_paciente BIGINT NOT NULL REFERENCES pacientes ON DELETE RESTRICT,
- id_servicio SMALLINT NOT NULL REFERENCES servicio,id_horario BIGINT NOT NULL UNIQUE REFERENCES horario ON DELETE RESTRICT,
- fecha_solicitud TIMESTAMPTZ NOT NULL DEFAULT now(),id_estado SMALLINT NOT NULL REFERENCES estado,
- valor_cobrado NUMERIC(10,2) NOT NULL CHECK(valor_cobrado>=0)
-);
-CREATE TABLE resultado_consulta(
- id_resultado BIGSERIAL PRIMARY KEY,id_cita BIGINT NOT NULL UNIQUE REFERENCES cita ON DELETE CASCADE,
- id_medico BIGINT NOT NULL REFERENCES medicos,resultado TEXT NOT NULL CHECK(length(trim(resultado))>=3),actualizado_en TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-CREATE FUNCTION fn_validar_perfil() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE v_rol TEXT;
-BEGIN
- SELECT r.codigo INTO v_rol FROM usuarios u JOIN roles r USING(id_rol) WHERE u.id_usuario=NEW.id_usuario;
- IF v_rol IS DISTINCT FROM CASE WHEN TG_TABLE_NAME='pacientes' THEN 'paciente' ELSE 'medico' END THEN
-   RAISE EXCEPTION 'El rol de la cuenta no corresponde con el perfil personal.';
- END IF;
- IF TG_TABLE_NAME='pacientes' AND EXISTS(SELECT 1 FROM medicos WHERE id_usuario=NEW.id_usuario) THEN RAISE EXCEPTION 'La cuenta ya tiene perfil médico.'; END IF;
- IF TG_TABLE_NAME='medicos' AND EXISTS(SELECT 1 FROM pacientes WHERE id_usuario=NEW.id_usuario) THEN RAISE EXCEPTION 'La cuenta ya tiene perfil de paciente.'; END IF;
- RETURN NEW;
-END $$;
-CREATE TRIGGER trg_rol_paciente BEFORE INSERT OR UPDATE OF id_usuario ON pacientes FOR EACH ROW EXECUTE FUNCTION fn_validar_perfil();
-CREATE TRIGGER trg_rol_medico BEFORE INSERT OR UPDATE OF id_usuario ON medicos FOR EACH ROW EXECUTE FUNCTION fn_validar_perfil();
 
-INSERT INTO tipo_documento(sigla,nombre) VALUES ('CC','Cédula de ciudadanía'),('TI','Tarjeta de identidad'),('RC','Registro civil'),('CE','Cédula de extranjería'),('PA','Pasaporte');
-INSERT INTO estado(nombre,ambito) VALUES ('Disponible','consultorio'),('Disponible','horario'),('Ocupado','horario'),('Programada','cita'),('Atendida','cita'),('Cancelada','cita');
-INSERT INTO tarifa(nombre,ingreso_min,ingreso_max,porcentaje_cobro) VALUES ('Categoría A',0,1500000,0),('Categoría B',1500000.01,3000000,20),('Categoría C',3000000.01,50000000,40),('Régimen especial',0,50000000,0);
-INSERT INTO servicio(nombre,descripcion,costo_base) VALUES ('Medicina general','Consulta médica general',50000),('Pediatría','Atención infantil',70000),('Odontología','Valoración odontológica',60000);
-INSERT INTO especialidad(nombre,descripcion) VALUES ('Medicina general','Atención médica primaria'),('Pediatría','Atención infantil'),('Odontología','Salud oral');
-INSERT INTO consultorio(nombre,ubicacion,capacidad,id_estado) SELECT n,u,c,id_estado FROM (VALUES ('Consultorio 101','Piso 1',3),('Consultorio 102','Piso 1',3),('Consultorio 201','Piso 2',2)) x(n,u,c) CROSS JOIN estado WHERE ambito='consultorio' AND estado.nombre='Disponible';
-INSERT INTO consultorio_especialidad SELECT c.id_consultorio,e.id_especialidad FROM consultorio c CROSS JOIN especialidad e WHERE (c.nombre='Consultorio 101' AND e.nombre='Medicina general') OR (c.nombre='Consultorio 102' AND e.nombre='Pediatría') OR (c.nombre='Consultorio 201' AND e.nombre='Odontología');
+CREATE TABLE pacientes (
+    id_paciente SERIAL PRIMARY KEY,
+    id_usuario INTEGER NOT NULL UNIQUE REFERENCES usuarios(id_usuario) ON DELETE CASCADE,
+    id_tipo_doc SMALLINT NOT NULL REFERENCES tipo_documento(id_tipo_doc),
+    num_doc VARCHAR(20) NOT NULL,
+    nombre1 VARCHAR(50) NOT NULL CHECK (nombre1 !~ '[0-9]'),
+    nombre2 VARCHAR(50) CHECK (nombre2 IS NULL OR nombre2 !~ '[0-9]'),
+    apellido1 VARCHAR(50) NOT NULL CHECK (apellido1 !~ '[0-9]'),
+    apellido2 VARCHAR(50) CHECK (apellido2 IS NULL OR apellido2 !~ '[0-9]'),
+    sexo VARCHAR(20),
+    fecha_nacimiento DATE NOT NULL CHECK (fecha_nacimiento <= CURRENT_DATE),
+    telefono VARCHAR(20),
+    correo VARCHAR(100),
+    direccion VARCHAR(150),
+    ingreso_mensual NUMERIC(12,2) NOT NULL CHECK (ingreso_mensual >= 0),
+    id_tarifa SMALLINT REFERENCES tarifa(id_tarifa),
+    estado_afiliacion VARCHAR(12) NOT NULL DEFAULT 'Pendiente'
+        CHECK (estado_afiliacion IN ('Pendiente', 'Activo', 'Inactivo')),
+    UNIQUE (id_tipo_doc, num_doc)
+);
 
--- Sesión web aleatoria: PostgreSQL conserva únicamente el hash del token.
-CREATE FUNCTION app_user_id() RETURNS BIGINT LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp SET row_security=off AS $$
- SELECT id_usuario FROM public.sesiones_app WHERE token_hash=encode(digest(current_setting('app.session_token',true),'sha256'),'hex') AND expira_en>now()
-$$;
-CREATE FUNCTION app_rol() RETURNS TEXT LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp SET row_security=off AS $$
- SELECT r.codigo FROM public.usuarios u JOIN public.roles r USING(id_rol) WHERE u.id_usuario=app_user_id()
-$$;
-CREATE FUNCTION app_paciente_id() RETURNS BIGINT LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp SET row_security=off AS $$ SELECT id_paciente FROM public.pacientes WHERE id_usuario=app_user_id() $$;
-CREATE FUNCTION app_medico_id() RETURNS BIGINT LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp SET row_security=off AS $$ SELECT id_medico FROM public.medicos WHERE id_usuario=app_user_id() $$;
-CREATE FUNCTION medico_atiende_paciente(p_id BIGINT) RETURNS BOOLEAN LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp SET row_security=off AS $$
- SELECT EXISTS(SELECT 1 FROM public.cita c JOIN public.horario h USING(id_horario) WHERE c.id_paciente=p_id AND h.id_medico=app_medico_id())
-$$;
-CREATE FUNCTION autenticar_usuario(p_username TEXT,p_password TEXT) RETURNS TABLE(id_usuario BIGINT,rol TEXT,nombre TEXT,session_token TEXT)
-LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp SET row_security=off AS $$
-DECLARE v_id BIGINT; v_rol TEXT; v_nombre TEXT; v_token TEXT;
-BEGIN
- SELECT u.id_usuario,r.codigo,COALESCE(p.nombre1||' '||p.apellido1,m.nombre1||' '||m.apellido1,u.username) INTO v_id,v_rol,v_nombre
- FROM usuarios u JOIN roles r USING(id_rol) LEFT JOIN pacientes p USING(id_usuario) LEFT JOIN medicos m USING(id_usuario)
- WHERE u.username=lower(trim(p_username)) AND u.activo AND u.password_hash=crypt(p_password,u.password_hash);
- IF v_id IS NULL THEN RETURN; END IF;
- DELETE FROM sesiones_app WHERE expira_en<=now(); v_token:=encode(gen_random_bytes(32),'hex');
- INSERT INTO sesiones_app(token_hash,id_usuario,expira_en) VALUES(encode(digest(v_token,'sha256'),'hex'),v_id,now()+interval '8 hours');
- RETURN QUERY SELECT v_id,v_rol,v_nombre,v_token;
-END $$;
-CREATE FUNCTION cerrar_sesion(p_token TEXT) RETURNS VOID LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp SET row_security=off AS $$
-BEGIN DELETE FROM sesiones_app WHERE token_hash=encode(digest(p_token,'sha256'),'hex'); END $$;
-CREATE FUNCTION registrar_paciente(p_username TEXT,p_password TEXT,p_tipo SMALLINT,p_doc TEXT,p_nombre1 TEXT,p_nombre2 TEXT,p_apellido1 TEXT,p_apellido2 TEXT,p_sexo TEXT,p_nacimiento DATE,p_telefono TEXT,p_correo TEXT,p_direccion TEXT,p_ingreso NUMERIC) RETURNS BIGINT
-LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $$
-DECLARE v_user BIGINT; v_patient BIGINT; v_role SMALLINT;
-BEGIN
- IF length(trim(p_username))<4 OR length(p_password)<10 OR p_ingreso<0 THEN RAISE EXCEPTION 'Verifica usuario, contraseña e ingreso declarado.'; END IF;
- SELECT id_rol INTO v_role FROM roles WHERE codigo='paciente';
- INSERT INTO usuarios(username,password_hash,id_rol) VALUES(lower(trim(p_username)),crypt(p_password,gen_salt('bf')),v_role) RETURNING id_usuario INTO v_user;
- INSERT INTO pacientes(id_usuario,id_tipo_doc,num_doc,nombre1,nombre2,apellido1,apellido2,sexo,fecha_nacimiento,telefono,correo,direccion,ingreso_mensual)
- VALUES(v_user,p_tipo,trim(p_doc),trim(p_nombre1),NULLIF(trim(p_nombre2),''),trim(p_apellido1),NULLIF(trim(p_apellido2),''),NULLIF(trim(p_sexo),''),p_nacimiento,NULLIF(trim(p_telefono),''),NULLIF(lower(trim(p_correo)),''),NULLIF(trim(p_direccion),''),p_ingreso) RETURNING id_paciente INTO v_patient;
- INSERT INTO historial(id_paciente) VALUES(v_patient); RETURN v_patient;
-END $$;
-CREATE FUNCTION reservar_cita(p_horario BIGINT,p_servicio SMALLINT) RETURNS BIGINT LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $$
-DECLARE v_paciente BIGINT; v_tarifa SMALLINT; v_percent NUMERIC; v_cost NUMERIC; v_state SMALLINT; v_id BIGINT;
-BEGIN
- IF app_rol()<>'paciente' THEN RAISE EXCEPTION 'Solo un paciente puede reservar.'; END IF;
- v_paciente:=app_paciente_id();
- SELECT id_tarifa INTO v_tarifa FROM pacientes WHERE id_paciente=v_paciente AND estado_afiliacion='Activo' FOR UPDATE;
- IF v_tarifa IS NULL THEN RAISE EXCEPTION 'La afiliación debe estar activa para reservar.'; END IF;
- SELECT porcentaje_cobro INTO v_percent FROM tarifa WHERE id_tarifa=v_tarifa;
- SELECT costo_base INTO v_cost FROM servicio WHERE id_servicio=p_servicio;
- SELECT id_estado INTO v_state FROM estado WHERE ambito='cita' AND nombre='Programada';
- INSERT INTO cita(id_paciente,id_servicio,id_horario,id_estado,valor_cobrado)
- SELECT v_paciente,p_servicio,h.id_horario,v_state,round(v_cost*v_percent/100,2) FROM horario h JOIN estado e USING(id_estado)
- WHERE h.id_horario=p_horario AND e.ambito='horario' AND e.nombre='Disponible' AND (h.fecha+h.hora_inicio)>(now() AT TIME ZONE 'America/Bogota') RETURNING id_cita INTO v_id;
- IF v_id IS NULL THEN RAISE EXCEPTION 'Horario no disponible o servicio inválido.'; END IF; RETURN v_id;
-END $$;
-CREATE FUNCTION guardar_resultado_cita(p_cita BIGINT,p_resultado TEXT) RETURNS VOID LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $$
-DECLARE v_medico BIGINT; v_state TEXT; v_inicio TIMESTAMP;
-BEGIN
- IF app_rol()<>'medico' THEN RAISE EXCEPTION 'Solo un médico puede guardar resultados.'; END IF;
- v_medico:=app_medico_id();
- SELECT e.nombre,h.fecha+h.hora_inicio INTO v_state,v_inicio FROM cita c JOIN horario h USING(id_horario) JOIN estado e USING(id_estado) WHERE c.id_cita=p_cita AND h.id_medico=v_medico FOR UPDATE OF c;
- IF v_state IS NULL OR v_state NOT IN ('Programada','Atendida') THEN RAISE EXCEPTION 'La cita no pertenece a la agenda de este médico o no está vigente.'; END IF;
- IF v_inicio>(now() AT TIME ZONE 'America/Bogota') THEN RAISE EXCEPTION 'Solo se registra el resultado desde la hora de la cita.'; END IF;
- IF length(trim(p_resultado))<3 THEN RAISE EXCEPTION 'Escribe un resultado de atención.'; END IF;
- INSERT INTO resultado_consulta(id_cita,id_medico,resultado) VALUES(p_cita,v_medico,trim(p_resultado)) ON CONFLICT(id_cita) DO UPDATE SET resultado=EXCLUDED.resultado,actualizado_en=now() WHERE resultado_consulta.id_medico=v_medico;
- UPDATE cita SET id_estado=(SELECT id_estado FROM estado WHERE ambito='cita' AND nombre='Atendida') WHERE id_cita=p_cita;
-END $$;
-CREATE FUNCTION aprobar_afiliacion(p_id BIGINT,p_estado TEXT,p_tarifa SMALLINT) RETURNS VOID LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $$
-BEGIN
- IF app_rol()<>'administrador' THEN RAISE EXCEPTION 'Solo administración puede cambiar afiliaciones.'; END IF;
- IF p_estado NOT IN ('Pendiente','Activo','Inactivo') OR (p_estado='Activo' AND p_tarifa IS NULL) THEN RAISE EXCEPTION 'Estado o tarifa inválidos.'; END IF;
- UPDATE pacientes SET estado_afiliacion=p_estado,id_tarifa=CASE WHEN p_estado='Activo' THEN p_tarifa ELSE id_tarifa END WHERE id_paciente=p_id;
- IF NOT FOUND THEN RAISE EXCEPTION 'Paciente no encontrado.'; END IF;
-END $$;
+CREATE TABLE medicos (
+    id_medico SERIAL PRIMARY KEY,
+    id_usuario INTEGER NOT NULL UNIQUE REFERENCES usuarios(id_usuario) ON DELETE CASCADE,
+    id_tipo_doc SMALLINT NOT NULL REFERENCES tipo_documento(id_tipo_doc),
+    num_doc VARCHAR(20) NOT NULL,
+    nombre1 VARCHAR(50) NOT NULL CHECK (nombre1 !~ '[0-9]'),
+    nombre2 VARCHAR(50) CHECK (nombre2 IS NULL OR nombre2 !~ '[0-9]'),
+    apellido1 VARCHAR(50) NOT NULL CHECK (apellido1 !~ '[0-9]'),
+    apellido2 VARCHAR(50) CHECK (apellido2 IS NULL OR apellido2 !~ '[0-9]'),
+    telefono VARCHAR(20),
+    correo VARCHAR(100),
+    id_especialidad SMALLINT NOT NULL REFERENCES especialidad(id_especialidad),
+    id_consultorio SMALLINT REFERENCES consultorio(id_consultorio),
+    UNIQUE (id_tipo_doc, num_doc)
+);
 
--- El trigger calcula el cobro desde la tarifa y mantiene el estado del horario.
-CREATE FUNCTION fn_costo_cita() RETURNS trigger LANGUAGE plpgsql AS $$
-BEGIN SELECT round(s.costo_base*t.porcentaje_cobro/100,2) INTO NEW.valor_cobrado FROM servicio s JOIN pacientes p ON p.id_paciente=NEW.id_paciente JOIN tarifa t ON t.id_tarifa=p.id_tarifa WHERE s.id_servicio=NEW.id_servicio; RETURN NEW; END $$;
-CREATE TRIGGER trg_costo_cita BEFORE INSERT OR UPDATE OF id_servicio,id_paciente ON cita FOR EACH ROW EXECUTE FUNCTION fn_costo_cita();
-CREATE FUNCTION fn_estado_horario() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE v_id BIGINT; v_state SMALLINT;
+CREATE TABLE historial (
+    id_historial SERIAL PRIMARY KEY,
+    id_paciente INTEGER NOT NULL UNIQUE REFERENCES pacientes(id_paciente) ON DELETE CASCADE,
+    fecha_apertura DATE NOT NULL DEFAULT CURRENT_DATE,
+    alergias TEXT,
+    grupo_sanguineo VARCHAR(5),
+    antecedentes TEXT,
+    observaciones TEXT
+);
+
+-- 5. Horarios, citas y resultados
+CREATE TABLE horario (
+    id_horario SERIAL PRIMARY KEY,
+    id_medico INTEGER NOT NULL REFERENCES medicos(id_medico),
+    fecha DATE NOT NULL,
+    hora_inicio TIME NOT NULL,
+    hora_fin TIME NOT NULL,
+    id_estado SMALLINT NOT NULL REFERENCES estado(id_estado),
+    CHECK (hora_fin > hora_inicio),
+    UNIQUE (id_medico, fecha, hora_inicio)
+);
+
+CREATE TABLE cita (
+    id_cita SERIAL PRIMARY KEY,
+    id_paciente INTEGER NOT NULL REFERENCES pacientes(id_paciente),
+    id_servicio SMALLINT NOT NULL REFERENCES servicio(id_servicio),
+    id_horario INTEGER NOT NULL UNIQUE REFERENCES horario(id_horario),
+    fecha_solicitud TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    id_estado SMALLINT NOT NULL REFERENCES estado(id_estado),
+    valor_cobrado NUMERIC(10,2) NOT NULL DEFAULT 0 CHECK (valor_cobrado >= 0)
+);
+
+CREATE TABLE resultado_consulta (
+    id_resultado SERIAL PRIMARY KEY,
+    id_cita INTEGER NOT NULL UNIQUE REFERENCES cita(id_cita) ON DELETE CASCADE,
+    id_medico INTEGER NOT NULL REFERENCES medicos(id_medico),
+    resultado TEXT NOT NULL,
+    fecha_registro TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO tipo_documento (sigla, nombre) VALUES
+    ('CC', 'Cédula de ciudadanía'),
+    ('TI', 'Tarjeta de identidad'),
+    ('RC', 'Registro civil'),
+    ('CE', 'Cédula de extranjería'),
+    ('PA', 'Pasaporte');
+
+INSERT INTO estado (ambito, nombre) VALUES
+    ('horario', 'Disponible'),
+    ('horario', 'Ocupado'),
+    ('cita', 'Programada'),
+    ('cita', 'Atendida'),
+    ('cita', 'Cancelada');
+
+INSERT INTO tarifa (nombre, ingreso_min, ingreso_max, porcentaje_cobro) VALUES
+    ('Categoría A', 0, 1500000, 0),
+    ('Categoría B', 1500000.01, 3000000, 20),
+    ('Categoría C', 3000000.01, 50000000, 40),
+    ('Régimen especial', 0, 50000000, 0);
+
+INSERT INTO servicio (nombre, descripcion, costo_base) VALUES
+    ('Medicina general', 'Consulta médica general', 50000),
+    ('Pediatría', 'Atención de niñas y niños', 70000),
+    ('Odontología', 'Valoración odontológica', 60000);
+
+INSERT INTO especialidad (nombre) VALUES
+    ('Medicina general'), ('Pediatría'), ('Odontología');
+
+INSERT INTO consultorio (nombre, ubicacion, capacidad) VALUES
+    ('Consultorio 101', 'Piso 1', 3),
+    ('Consultorio 102', 'Piso 1', 3),
+    ('Consultorio 201', 'Piso 2', 2);
+
+-- 6. Funciones y disparadores sencillos
+-- La función calcula el valor de la cita desde el servicio y la tarifa.
+CREATE FUNCTION calcular_valor_cita() RETURNS TRIGGER AS $$
+DECLARE
+    costo NUMERIC(10,2);
+    porcentaje NUMERIC(5,2);
 BEGIN
- IF TG_OP<>'INSERT' THEN
-  v_id:=OLD.id_horario;
-  SELECT id_estado INTO v_state FROM estado WHERE ambito='horario' AND nombre=CASE WHEN EXISTS(SELECT 1 FROM cita WHERE id_horario=v_id) THEN 'Ocupado' ELSE 'Disponible' END;
-  UPDATE horario SET id_estado=v_state WHERE id_horario=v_id;
- END IF;
- IF TG_OP<>'DELETE' THEN
-  v_id:=NEW.id_horario;
-  SELECT id_estado INTO v_state FROM estado WHERE ambito='horario' AND nombre=CASE WHEN EXISTS(SELECT 1 FROM cita WHERE id_horario=v_id) THEN 'Ocupado' ELSE 'Disponible' END;
-  UPDATE horario SET id_estado=v_state WHERE id_horario=v_id;
- END IF;
- RETURN NULL;
-END $$;
-CREATE TRIGGER trg_estado_horario AFTER INSERT OR UPDATE OR DELETE ON cita FOR EACH ROW EXECUTE FUNCTION fn_estado_horario();
-CREATE VIEW horarios_disponibles AS
- SELECT h.id_horario,h.fecha,h.hora_inicio,h.hora_fin,m.nombre1||' '||m.apellido1 AS medico,e.nombre AS especialidad
- FROM horario h JOIN estado st USING(id_estado) JOIN medicos m USING(id_medico) JOIN especialidad e USING(id_especialidad)
- WHERE st.ambito='horario' AND st.nombre='Disponible' AND (h.fecha+h.hora_inicio)>(now() AT TIME ZONE 'America/Bogota');
+    SELECT s.costo_base, t.porcentaje_cobro
+      INTO costo, porcentaje
+      FROM servicio s
+      JOIN pacientes p ON p.id_paciente = NEW.id_paciente
+      JOIN tarifa t ON t.id_tarifa = p.id_tarifa
+     WHERE s.id_servicio = NEW.id_servicio;
 
-ALTER TABLE usuarios ENABLE ROW LEVEL SECURITY;
-ALTER TABLE pacientes ENABLE ROW LEVEL SECURITY;
-ALTER TABLE medicos ENABLE ROW LEVEL SECURITY;
-ALTER TABLE historial ENABLE ROW LEVEL SECURITY;
-ALTER TABLE horario ENABLE ROW LEVEL SECURITY;
-ALTER TABLE cita ENABLE ROW LEVEL SECURITY;
-ALTER TABLE resultado_consulta ENABLE ROW LEVEL SECURITY;
-CREATE POLICY usuario_lectura ON usuarios FOR SELECT USING(current_user='rbac_administrador' OR id_usuario=app_user_id());
-CREATE POLICY usuario_admin ON usuarios FOR ALL TO rbac_administrador USING(true) WITH CHECK(true);
-CREATE POLICY paciente_lectura ON pacientes FOR SELECT USING(current_user='rbac_administrador' OR id_usuario=app_user_id() OR (current_user='rbac_medico' AND medico_atiende_paciente(id_paciente)));
-CREATE POLICY paciente_admin ON pacientes FOR ALL TO rbac_administrador USING(true) WITH CHECK(true);
-CREATE POLICY medico_lectura ON medicos FOR SELECT USING(current_user='rbac_administrador' OR id_usuario=app_user_id());
-CREATE POLICY medico_admin ON medicos FOR ALL TO rbac_administrador USING(true) WITH CHECK(true);
-CREATE POLICY historial_lectura ON historial FOR SELECT USING(current_user='rbac_administrador' OR id_paciente=app_paciente_id() OR (current_user='rbac_medico' AND medico_atiende_paciente(id_paciente)));
-CREATE POLICY historial_admin ON historial FOR ALL TO rbac_administrador USING(true) WITH CHECK(true);
-CREATE POLICY horario_lectura ON horario FOR SELECT USING(current_user='rbac_administrador' OR id_medico=app_medico_id() OR (current_user='rbac_paciente' AND id_estado=(SELECT id_estado FROM estado WHERE ambito='horario' AND nombre='Disponible') AND (fecha+hora_inicio)>(now() AT TIME ZONE 'America/Bogota')));
-CREATE POLICY horario_admin ON horario FOR ALL TO rbac_administrador USING(true) WITH CHECK(true);
-CREATE POLICY cita_lectura ON cita FOR SELECT USING(current_user='rbac_administrador' OR id_paciente=app_paciente_id() OR (current_user='rbac_medico' AND EXISTS(SELECT 1 FROM horario h WHERE h.id_horario=cita.id_horario AND h.id_medico=app_medico_id())));
-CREATE POLICY cita_admin ON cita FOR ALL TO rbac_administrador USING(true) WITH CHECK(true);
-CREATE POLICY resultado_lectura ON resultado_consulta FOR SELECT USING(current_user='rbac_administrador' OR id_medico=app_medico_id() OR EXISTS(SELECT 1 FROM cita c WHERE c.id_cita=resultado_consulta.id_cita AND c.id_paciente=app_paciente_id()));
-CREATE POLICY resultado_admin ON resultado_consulta FOR ALL TO rbac_administrador USING(true) WITH CHECK(true);
+    IF costo IS NULL OR porcentaje IS NULL THEN
+        RAISE EXCEPTION 'No se encontró el servicio o la tarifa del paciente.';
+    END IF;
 
-GRANT USAGE ON SCHEMA public TO eps_app,eps_admin,rbac_paciente,rbac_medico,rbac_administrador;
-GRANT SELECT ON tipo_documento,estado,tarifa,servicio,especialidad,consultorio_especialidad TO eps_app,rbac_paciente,rbac_medico,rbac_administrador;
-GRANT SELECT ON pacientes,medicos,historial,horario,cita,resultado_consulta TO rbac_paciente,rbac_medico;
-GRANT SELECT ON horarios_disponibles TO rbac_paciente;
-GRANT SELECT ON roles,usuarios,pacientes,medicos,historial,horario,cita,resultado_consulta,consultorio,consultorio_especialidad,servicio,tarifa,especialidad,estado,tipo_documento TO rbac_administrador;
-GRANT INSERT,UPDATE,DELETE ON roles,usuarios,pacientes,medicos,historial,horario,cita,resultado_consulta,consultorio,consultorio_especialidad,servicio,tarifa,especialidad,estado,tipo_documento TO rbac_administrador;
-GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA public TO rbac_administrador;
-GRANT EXECUTE ON FUNCTION app_user_id(),app_rol(),app_paciente_id(),app_medico_id(),medico_atiende_paciente(BIGINT) TO eps_app,rbac_paciente,rbac_medico,rbac_administrador;
-REVOKE ALL ON FUNCTION app_user_id(),app_rol(),app_paciente_id(),app_medico_id(),medico_atiende_paciente(BIGINT) FROM PUBLIC;
-REVOKE ALL ON FUNCTION autenticar_usuario(TEXT,TEXT),cerrar_sesion(TEXT),registrar_paciente(TEXT,TEXT,SMALLINT,TEXT,TEXT,TEXT,TEXT,TEXT,TEXT,DATE,TEXT,TEXT,TEXT,NUMERIC),reservar_cita(BIGINT,SMALLINT),guardar_resultado_cita(BIGINT,TEXT),aprobar_afiliacion(BIGINT,TEXT,SMALLINT) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION autenticar_usuario(TEXT,TEXT),cerrar_sesion(TEXT),registrar_paciente(TEXT,TEXT,SMALLINT,TEXT,TEXT,TEXT,TEXT,TEXT,TEXT,DATE,TEXT,TEXT,TEXT,NUMERIC) TO eps_app;
-GRANT EXECUTE ON FUNCTION reservar_cita(BIGINT,SMALLINT) TO rbac_paciente;
-GRANT EXECUTE ON FUNCTION guardar_resultado_cita(BIGINT,TEXT) TO rbac_medico;
-GRANT EXECUTE ON FUNCTION aprobar_afiliacion(BIGINT,TEXT,SMALLINT) TO rbac_administrador;
-GRANT rbac_paciente,rbac_medico TO eps_app;
-GRANT rbac_administrador TO eps_admin;
-REVOKE ALL ON ALL TABLES IN SCHEMA public FROM PUBLIC;
-REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+    NEW.valor_cobrado := ROUND(costo * porcentaje / 100, 2);
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
 
-COMMENT ON TABLE usuarios IS 'Credenciales y rol funcional; nunca almacena contraseñas en texto plano.';
-COMMENT ON TABLE pacientes IS 'Datos personales y estado de afiliación.';
-COMMENT ON COLUMN pacientes.estado_afiliacion IS 'Pendiente hasta que administración verifique el pago externo.';
-COMMENT ON TABLE resultado_consulta IS 'Resultado de la cita, registrable por el médico asignado.';
+CREATE TRIGGER trg_calcular_valor_cita
+BEFORE INSERT OR UPDATE OF id_servicio, id_paciente ON cita
+FOR EACH ROW EXECUTE FUNCTION calcular_valor_cita();
+
+-- El disparador marca como ocupado el horario reservado y lo libera al borrar la cita.
+CREATE FUNCTION actualizar_estado_horario() RETURNS TRIGGER AS $$
+DECLARE
+    horario_actual INTEGER;
+    estado_actual SMALLINT;
+BEGIN
+    IF TG_OP <> 'INSERT' THEN
+        horario_actual := OLD.id_horario;
+        SELECT id_estado INTO estado_actual FROM estado
+         WHERE ambito = 'horario'
+           AND nombre = CASE WHEN EXISTS (SELECT 1 FROM cita WHERE id_horario = horario_actual)
+                             THEN 'Ocupado' ELSE 'Disponible' END;
+        UPDATE horario SET id_estado = estado_actual WHERE id_horario = horario_actual;
+    END IF;
+
+    IF TG_OP <> 'DELETE' THEN
+        horario_actual := NEW.id_horario;
+        SELECT id_estado INTO estado_actual FROM estado
+         WHERE ambito = 'horario'
+           AND nombre = CASE WHEN EXISTS (SELECT 1 FROM cita WHERE id_horario = horario_actual)
+                             THEN 'Ocupado' ELSE 'Disponible' END;
+        UPDATE horario SET id_estado = estado_actual WHERE id_horario = horario_actual;
+    END IF;
+
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_actualizar_estado_horario
+AFTER INSERT OR UPDATE OR DELETE ON cita
+FOR EACH ROW EXECUTE FUNCTION actualizar_estado_horario();
+
+-- 7. Permisos de conexión de la aplicación local
+GRANT USAGE ON SCHEMA public TO eps_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO eps_app;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO eps_app;
+
+-- 8. Veinte cuentas iniciales: un administrador, cuatro médicos y quince pacientes.
+-- Todas usan la contraseña de demostración: DemoEPS2026
+INSERT INTO usuarios (username, password_hash, id_rol)
+SELECT datos.username,
+       '$2y$10$pjW3frTlI0e5915EpCulFeMkeBNpu/a9TUgntvPNtq9LGjrSgDJkC',
+       r.id_rol
+  FROM (VALUES
+    ('admin.eps', 'administrador'),
+    ('diana.rojas', 'medico'), ('carlos.mejia', 'medico'),
+    ('lucia.torres', 'medico'), ('andres.mora', 'medico'),
+    ('ana.martinez', 'paciente'), ('luis.gomez', 'paciente'),
+    ('laura.ramirez', 'paciente'), ('miguel.perez', 'paciente'),
+    ('sofia.lopez', 'paciente'), ('juan.hernandez', 'paciente'),
+    ('valentina.diaz', 'paciente'), ('mateo.castillo', 'paciente'),
+    ('isabella.vargas', 'paciente'), ('santiago.ruiz', 'paciente'),
+    ('camila.moreno', 'paciente'), ('daniel.ortiz', 'paciente'),
+    ('gabriela.silva', 'paciente'), ('samuel.reyes', 'paciente'),
+    ('mariana.castro', 'paciente')
+  ) AS datos(username, rol)
+  JOIN roles r ON r.codigo = datos.rol;
+
+-- Perfiles de los cuatro médicos de demostración.
+INSERT INTO medicos (id_usuario, id_tipo_doc, num_doc, nombre1, apellido1, telefono, correo, id_especialidad, id_consultorio)
+SELECT u.id_usuario, td.id_tipo_doc, datos.documento, datos.nombre, datos.apellido,
+       '3005550100', datos.username || '@eps.local', e.id_especialidad, c.id_consultorio
+  FROM (VALUES
+    ('diana.rojas', '90000001', 'Diana', 'Rojas', 'Medicina general', 'Consultorio 101'),
+    ('carlos.mejia', '90000002', 'Carlos', 'Mejía', 'Pediatría', 'Consultorio 102'),
+    ('lucia.torres', '90000003', 'Lucía', 'Torres', 'Odontología', 'Consultorio 201'),
+    ('andres.mora', '90000004', 'Andrés', 'Mora', 'Medicina general', 'Consultorio 101')
+  ) AS datos(username, documento, nombre, apellido, especialidad, consultorio)
+  JOIN usuarios u ON u.username = datos.username
+  JOIN tipo_documento td ON td.sigla = 'CC'
+  JOIN especialidad e ON e.nombre = datos.especialidad
+  JOIN consultorio c ON c.nombre = datos.consultorio;
+
+-- Perfiles de quince pacientes; diez afiliaciones están activas para probar reservas.
+INSERT INTO pacientes (id_usuario, id_tipo_doc, num_doc, nombre1, apellido1, fecha_nacimiento, telefono, correo, direccion, ingreso_mensual, id_tarifa, estado_afiliacion)
+SELECT u.id_usuario, td.id_tipo_doc, datos.documento, datos.nombre, datos.apellido,
+       DATE '1995-01-01' + datos.n, '300555' || lpad(datos.n::text, 4, '0'),
+       datos.username || '@correo.local', 'Villavicencio', 1200000,
+       (SELECT id_tarifa FROM tarifa WHERE nombre='Categoría A'),
+       CASE WHEN datos.n <= 10 THEN 'Activo' ELSE 'Pendiente' END
+  FROM (VALUES
+    ('ana.martinez','10000001','Ana','Martínez',1), ('luis.gomez','10000002','Luis','Gómez',2),
+    ('laura.ramirez','10000003','Laura','Ramírez',3), ('miguel.perez','10000004','Miguel','Pérez',4),
+    ('sofia.lopez','10000005','Sofía','López',5), ('juan.hernandez','10000006','Juan','Hernández',6),
+    ('valentina.diaz','10000007','Valentina','Díaz',7), ('mateo.castillo','10000008','Mateo','Castillo',8),
+    ('isabella.vargas','10000009','Isabella','Vargas',9), ('santiago.ruiz','10000010','Santiago','Ruiz',10),
+    ('camila.moreno','10000011','Camila','Moreno',11), ('daniel.ortiz','10000012','Daniel','Ortiz',12),
+    ('gabriela.silva','10000013','Gabriela','Silva',13), ('samuel.reyes','10000014','Samuel','Reyes',14),
+    ('mariana.castro','10000015','Mariana','Castro',15)
+  ) AS datos(username, documento, nombre, apellido, n)
+  JOIN usuarios u ON u.username = datos.username
+  JOIN tipo_documento td ON td.sigla = 'CC';
+
+INSERT INTO historial (id_paciente, alergias, grupo_sanguineo, antecedentes)
+SELECT id_paciente, 'Sin alergias registradas', 'O+', 'Sin antecedentes registrados'
+  FROM pacientes;
+
+-- Horarios para los médicos de demostración y dos citas de ejemplo.
+INSERT INTO horario (id_medico, fecha, hora_inicio, hora_fin, id_estado)
+SELECT m.id_medico, CURRENT_DATE + 1, TIME '08:00' + (g.slot * INTERVAL '1 hour'),
+       TIME '09:00' + (g.slot * INTERVAL '1 hour'),
+       (SELECT id_estado FROM estado WHERE ambito='horario' AND nombre='Disponible')
+  FROM medicos m CROSS JOIN generate_series(0, 2) AS g(slot);
+
+INSERT INTO cita (id_paciente, id_servicio, id_horario, id_estado)
+SELECT p.id_paciente, s.id_servicio, h.id_horario,
+       (SELECT id_estado FROM estado WHERE ambito='cita' AND nombre='Programada')
+  FROM pacientes p
+  JOIN usuarios u ON u.id_usuario = p.id_usuario
+  JOIN horario h ON h.id_horario = p.id_paciente - (SELECT min(id_paciente) FROM pacientes) + 1
+  JOIN servicio s ON s.nombre = 'Medicina general'
+ WHERE u.username IN ('ana.martinez', 'luis.gomez');
+
+-- Descripciones básicas para facilitar la sustentación del modelo.
+COMMENT ON TABLE usuarios IS 'Credenciales de acceso al portal.';
+COMMENT ON TABLE roles IS 'Perfiles de paciente, médico y administrador.';
+COMMENT ON TABLE permisos IS 'Acciones disponibles para los perfiles del portal.';
+COMMENT ON TABLE pacientes IS 'Datos personales y estado de afiliación de cada paciente.';
+COMMENT ON COLUMN pacientes.estado_afiliacion IS 'Pendiente hasta que la EPS confirme el pago externo.';
+COMMENT ON TABLE medicos IS 'Datos personales y profesionales de cada médico.';
+COMMENT ON TABLE cita IS 'Reserva de un paciente para un servicio y horario.';

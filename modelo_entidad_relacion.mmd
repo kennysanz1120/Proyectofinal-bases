@@ -1,5 +1,7 @@
 erDiagram
     ROLES ||--o{ USUARIOS : asigna
+    ROLES ||--o{ ROL_PERMISO : autoriza
+    PERMISOS ||--o{ ROL_PERMISO : incluye
     USUARIOS ||--o| PACIENTES : perfil
     USUARIOS ||--o| MEDICOS : perfil
     TIPO_DOCUMENTO ||--o{ PACIENTES : identifica
@@ -8,78 +10,83 @@ erDiagram
     PACIENTES ||--|| HISTORIAL : tiene
     ESPECIALIDAD ||--o{ MEDICOS : especializa
     CONSULTORIO ||--o{ MEDICOS : asigna
-    CONSULTORIO ||--o{ CONSULTORIO_ESPECIALIDAD : ofrece
-    ESPECIALIDAD ||--o{ CONSULTORIO_ESPECIALIDAD : disponible_en
-    MEDICOS ||--o{ HORARIO : publica
+    MEDICOS ||--o{ HORARIO : programa
     ESTADO ||--o{ HORARIO : clasifica
     PACIENTES ||--o{ CITA : reserva
     SERVICIO ||--o{ CITA : solicita
     HORARIO ||--o| CITA : ocupa
     ESTADO ||--o{ CITA : clasifica
-    CITA ||--o| RESULTADO_CONSULTA : registra
-    MEDICOS ||--o{ RESULTADO_CONSULTA : escribe
+    CITA ||--o| RESULTADO_CONSULTA : recibe
+    MEDICOS ||--o{ RESULTADO_CONSULTA : registra
 
     ROLES {
-      smallint id_rol PK
-      varchar codigo UK
-      varchar nombre
+        smallint id_rol PK
+        varchar codigo UK
+        varchar nombre
+    }
+    PERMISOS {
+        smallint id_permiso PK
+        varchar codigo UK
+        varchar descripcion
+    }
+    ROL_PERMISO {
+        smallint id_rol PK, FK
+        smallint id_permiso PK, FK
     }
     USUARIOS {
-      bigint id_usuario PK
-      varchar username UK
-      text password_hash
-      smallint id_rol FK
-      boolean activo
-      timestamptz creado_en
+        integer id_usuario PK
+        varchar username UK
+        varchar password_hash
+        smallint id_rol FK
+        boolean activo
     }
     PACIENTES {
-      bigint id_paciente PK
-      bigint id_usuario FK_UK
-      smallint id_tipo_doc FK
-      varchar num_doc
-      varchar nombre1
-      varchar apellido1
-      numeric ingreso_mensual
-      varchar estado_afiliacion
-      smallint id_tarifa FK
+        integer id_paciente PK
+        integer id_usuario FK, UK
+        smallint id_tipo_doc FK
+        varchar num_doc
+        varchar nombre1
+        varchar apellido1
+        numeric ingreso_mensual
+        varchar estado_afiliacion
+        smallint id_tarifa FK
     }
     MEDICOS {
-      bigint id_medico PK
-      bigint id_usuario FK_UK
-      smallint id_tipo_doc FK
-      varchar num_doc
-      varchar nombre1
-      varchar apellido1
-      smallint id_especialidad FK
-      bigint id_consultorio FK
+        integer id_medico PK
+        integer id_usuario FK, UK
+        smallint id_tipo_doc FK
+        varchar num_doc
+        varchar nombre1
+        varchar apellido1
+        smallint id_especialidad FK
+        smallint id_consultorio FK
     }
     HISTORIAL {
-      bigint id_historial PK
-      bigint id_paciente FK_UK
-      text alergias
-      text antecedentes
-      text observaciones
+        integer id_historial PK
+        integer id_paciente FK, UK
+        text alergias
+        varchar grupo_sanguineo
+        text antecedentes
     }
     HORARIO {
-      bigint id_horario PK
-      bigint id_medico FK
-      date fecha
-      time hora_inicio
-      time hora_fin
-      smallint id_estado FK
+        integer id_horario PK
+        integer id_medico FK
+        date fecha
+        time hora_inicio
+        time hora_fin
+        smallint id_estado FK
     }
     CITA {
-      bigint id_cita PK
-      bigint id_paciente FK
-      bigint id_horario FK_UK
-      smallint id_servicio FK
-      numeric valor_cobrado
-      smallint id_estado FK
+        integer id_cita PK
+        integer id_paciente FK
+        smallint id_servicio FK
+        integer id_horario FK, UK
+        smallint id_estado FK
+        numeric valor_cobrado
     }
     RESULTADO_CONSULTA {
-      bigint id_resultado PK
-      bigint id_cita FK_UK
-      bigint id_medico FK
-      text resultado
-      timestamptz actualizado_en
+        integer id_resultado PK
+        integer id_cita FK, UK
+        integer id_medico FK
+        text resultado
     }
