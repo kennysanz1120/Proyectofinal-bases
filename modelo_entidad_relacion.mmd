@@ -1,0 +1,85 @@
+erDiagram
+    ROLES ||--o{ USUARIOS : asigna
+    USUARIOS ||--o| PACIENTES : perfil
+    USUARIOS ||--o| MEDICOS : perfil
+    TIPO_DOCUMENTO ||--o{ PACIENTES : identifica
+    TIPO_DOCUMENTO ||--o{ MEDICOS : identifica
+    TARIFA ||--o{ PACIENTES : clasifica
+    PACIENTES ||--|| HISTORIAL : tiene
+    ESPECIALIDAD ||--o{ MEDICOS : especializa
+    CONSULTORIO ||--o{ MEDICOS : asigna
+    CONSULTORIO ||--o{ CONSULTORIO_ESPECIALIDAD : ofrece
+    ESPECIALIDAD ||--o{ CONSULTORIO_ESPECIALIDAD : disponible_en
+    MEDICOS ||--o{ HORARIO : publica
+    ESTADO ||--o{ HORARIO : clasifica
+    PACIENTES ||--o{ CITA : reserva
+    SERVICIO ||--o{ CITA : solicita
+    HORARIO ||--o| CITA : ocupa
+    ESTADO ||--o{ CITA : clasifica
+    CITA ||--o| RESULTADO_CONSULTA : registra
+    MEDICOS ||--o{ RESULTADO_CONSULTA : escribe
+
+    ROLES {
+      smallint id_rol PK
+      varchar codigo UK
+      varchar nombre
+    }
+    USUARIOS {
+      bigint id_usuario PK
+      varchar username UK
+      text password_hash
+      smallint id_rol FK
+      boolean activo
+      timestamptz creado_en
+    }
+    PACIENTES {
+      bigint id_paciente PK
+      bigint id_usuario FK_UK
+      smallint id_tipo_doc FK
+      varchar num_doc
+      varchar nombre1
+      varchar apellido1
+      numeric ingreso_mensual
+      varchar estado_afiliacion
+      smallint id_tarifa FK
+    }
+    MEDICOS {
+      bigint id_medico PK
+      bigint id_usuario FK_UK
+      smallint id_tipo_doc FK
+      varchar num_doc
+      varchar nombre1
+      varchar apellido1
+      smallint id_especialidad FK
+      bigint id_consultorio FK
+    }
+    HISTORIAL {
+      bigint id_historial PK
+      bigint id_paciente FK_UK
+      text alergias
+      text antecedentes
+      text observaciones
+    }
+    HORARIO {
+      bigint id_horario PK
+      bigint id_medico FK
+      date fecha
+      time hora_inicio
+      time hora_fin
+      smallint id_estado FK
+    }
+    CITA {
+      bigint id_cita PK
+      bigint id_paciente FK
+      bigint id_horario FK_UK
+      smallint id_servicio FK
+      numeric valor_cobrado
+      smallint id_estado FK
+    }
+    RESULTADO_CONSULTA {
+      bigint id_resultado PK
+      bigint id_cita FK_UK
+      bigint id_medico FK
+      text resultado
+      timestamptz actualizado_en
+    }

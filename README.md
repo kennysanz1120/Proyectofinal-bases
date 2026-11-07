@@ -1,39 +1,69 @@
-# Proyecto Final de Bases de Datos — EPS Villavicencio
+# 🏥 EPS Villavicencio
+### Portal académico de citas médicas y afiliaciones
 
-Sistema de reserva de citas médicas desarrollado con PHP y PostgreSQL, sin framework.
+Aplicación web académica con PHP y PostgreSQL. Los datos son de demostración; no registres información clínica real.
+
+## Funciones por perfil
+
+| Perfil | Permisos principales |
+|---|---|
+| Paciente | Consulta su perfil, afiliación, historia y citas; agenda una cita disponible si está activo. |
+| Médico | Consulta su agenda y los datos de pacientes que atiende; registra el resultado de su cita. |
+| Administrador | Gestiona afiliaciones, perfiles médicos, horarios y registros de la EPS. |
+
+La afiliación comienza en estado `Pendiente`. La página no procesa pagos; administración la activa cuando confirma el pago externo.
 
 ## Requisitos
 
-- Linux
-- PHP 7.4 o superior con las extensiones `pdo` y `pdo_pgsql`
-- PostgreSQL y permiso para habilitar la extensión `btree_gist` usada por el SQL
+- Linux, PHP 8.2 con `pdo_pgsql` y PostgreSQL 14 o superior.
+- Extensiones PostgreSQL `btree_gist` y `pgcrypto`.
 
-## Primera instalación local
+## Instalación en una base vacía
 
-1. Cree una base de datos vacía llamada `eps_villavicencio`. Por ejemplo: `sudo -u postgres createdb eps_villavicencio`.
-2. Importe el archivo SQL una sola vez: `sudo -u postgres psql -d eps_villavicencio -f proyecto.sql`. El SQL crea tablas, relaciones, reglas, disparadores y datos de demostración.
-3. Cree el usuario de aplicación con permisos limitados: `sudo -u postgres psql -d postgres -f crear_usuario_app.sql`. El script pedirá la contraseña de `eps_app`; este usuario no es superusuario y solo tiene permisos de lectura y escritura sobre los objetos del proyecto.
-4. Configure `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER` y `DB_PASSWORD`, o use `DATABASE_URL`. Por defecto, la aplicación usa `eps_app`; `DB_PASSWORD` debe coincidir con la clave definida en el paso anterior.
-5. Desde esta carpeta, inicie PHP: `php -S 127.0.0.1:8000`. Abra `http://127.0.0.1:8000`.
+```bash
+sudo -u postgres createdb eps_villavicencio
+sudo -u postgres psql -d postgres -f crear_usuario_app.sql
+sudo -u postgres psql -d eps_villavicencio -v ON_ERROR_STOP=1 -f proyecto.sql
+sudo -u postgres psql -d eps_villavicencio -f crear_administrador.sql
+```
 
-El inicio tiene un solo formulario. Un afiliado entra con tipo de documento, número y nombre completo. La administración se reconoce con `APP_ADMIN_TIPO_DOC`, `APP_ADMIN_DOCUMENTO` y `APP_ADMIN_NOMBRE`, y además exige `APP_ACCESS_PASSWORD`. Configura esas cuatro variables en el entorno local o en Render; no guardes datos personales ni claves en GitHub.
+Los dos primeros roles de conexión que solicita `crear_usuario_app.sql` son `eps_app` y `eps_admin`. No son superusuarios. `crear_administrador.sql` solicita el usuario y la contraseña iniciales del portal.
 
-Para cargar las claves localmente sin mostrarlas en pantalla, en Bash puede usar `export DB_USER=eps_app; read -s -p "Clave de PostgreSQL: " DB_PASSWORD; export DB_PASSWORD; echo; read -s -p "Clave administrativa: " APP_ACCESS_PASSWORD; export APP_ACCESS_PASSWORD; echo; export APP_ADMIN_TIPO_DOC=CC; read -r -p "Documento del administrador: " APP_ADMIN_DOCUMENTO; export APP_ADMIN_DOCUMENTO; read -r -p "Nombre del administrador: " APP_ADMIN_NOMBRE; export APP_ADMIN_NOMBRE` antes de iniciar PHP.
+Configura las variables `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_ADMIN_USER` y `DB_ADMIN_PASSWORD`. También se puede usar `DATABASE_URL` para host, puerto, base y SSL. No guardes contraseñas en GitHub.
 
-## Módulos
+Inicia desde esta carpeta:
 
-- Resumen de afiliados, citas y horarios.
-- Registro, actualización y consulta de afiliados.
-- Registro y actualización de médicos, consultorios/salas y horarios.
-- Reserva de citas seleccionando médico, fecha y hora disponible.
-- Consulta de citas, marcado de atención y eliminación con liberación del horario.
+```bash
+php -S 127.0.0.1:8000
+```
 
-## Reglas destacadas
+Abre <http://127.0.0.1:8000>.
 
-- CC, TI y RC: solo dígitos, máximo 10. CE y PA: letras y dígitos, máximo 20.
-- Nombres: no aceptan números.
-- Ingresos y capacidad: no pueden ser negativos.
-- Las citas toman su valor del costo del servicio y la tarifa del afiliado.
-- Los disparadores del proyecto permanecen en `proyecto.sql`.
-- `Database.php` aplica el patrón Singleton y entrega una única instancia PDO durante cada petición PHP.
-- Las claves primarias y restricciones `UNIQUE` ya tienen índices implícitos. Se recomienda evaluar nuevas consultas con `EXPLAIN ANALYZE` antes de agregar índices, porque estos ocupan espacio y pueden hacer más costosas las escrituras.
+## Seguridad de base de datos
+
+- `roles` y `usuarios` separan el inicio de sesión de los perfiles personales `pacientes` y `medicos`.
+- RLS restringe las filas visibles. Pacientes y médicos no reciben permisos DML directos sobre tablas.
+- Reservar cita, guardar resultado y aprobar afiliación son funciones SQL con validaciones propias.
+- Las contraseñas se almacenan con `pgcrypto`; PostgreSQL conserva el hash de un token aleatorio para validar la sesión.
+- Las conexiones de PostgreSQL nunca llegan al navegador; deben permanecer privadas y configuradas como secretos del servicio.
+
+## Archivos
+
+| Archivo | Uso |
+|---|---|
+| `proyecto.sql` | Tablas, restricciones, funciones, disparadores, RLS y catálogos. |
+| `crear_usuario_app.sql` | Roles funcionales de PostgreSQL y usuarios de conexión. |
+| `crear_administrador.sql` | Cuenta administrativa inicial del portal. |
+| `index.php`, `Database.php`, `config.php` | Interfaz, acceso y configuración PDO. |
+| `assets/app.css` | Diseño institucional adaptable. |
+| `modelo_entidad_relacion.mmd` | Diagrama ER en Mermaid. |
+| `Informe_Proyecto.docx` | Informe, objetivos, justificación y diccionario de datos. |
+| `Dockerfile`, `entrypoint.sh`, `render.yaml`, `DEPLOY.md` | Despliegue con contenedor en Render. |
+
+## Aviso de instalación
+
+`proyecto.sql` se ejecuta una sola vez en una base vacía; no convierte los datos del esquema anterior. Si ya tienes tablas existentes, respáldalas y crea una base nueva para esta versión.
+
+## Uso de índices
+
+PostgreSQL crea índices para claves primarias y restricciones `UNIQUE`. Antes de agregar más, evalúa las consultas con `EXPLAIN ANALYZE`.

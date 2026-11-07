@@ -1,11 +1,13 @@
-# Publicar el proyecto
+# Despliegue en Render
 
-Esta configuración está preparada para Render. Necesitas una cuenta de Render y una copia de esta carpeta en un repositorio GitHub.
+1. Publica el repositorio en GitHub y crea un Blueprint en Render apuntando a `render.yaml`.
+2. El Blueprint crea una base PostgreSQL y el servicio web. Las claves se generan como variables secretas.
+3. El contenedor espera a PostgreSQL, crea los roles y esquema en la primera ejecución e inserta la cuenta web inicial `admin`.
+4. Abre la URL pública del servicio e inicia sesión con `APP_ADMIN_USERNAME` y `APP_ADMIN_PASSWORD`.
+5. Desde administración, crea las cuentas médicas, horarios y aprobaciones de afiliación.
 
-1. Sube el contenido completo de esta carpeta a un repositorio GitHub.
-2. En Render, crea un **Blueprint** y conecta ese repositorio. Render leerá `render.yaml`, creará el servicio PHP y PostgreSQL e importará `proyecto.sql` al iniciar por primera vez.
-3. Cuando termine el despliegue, abre el servicio `eps-villavicencio` en Render y usa su URL `onrender.com`. El único formulario de ingreso valida afiliados por tipo de documento, número y nombre completo. Para administración, configura en **Environment** `APP_ADMIN_TIPO_DOC`, `APP_ADMIN_DOCUMENTO` y `APP_ADMIN_NOMBRE`; `APP_ACCESS_PASSWORD` sigue siendo la clave adicional del hospital. No guardes esos valores en GitHub.
+La instalación inicial necesita una base vacía y una cuenta de conexión propietaria con permiso para crear roles. Si Render devuelve `permission denied to create role`, la cuenta usada en `DATABASE_URL` no tiene `CREATEROLE`: el despliegue se detendrá, y la configuración de roles deberá hacerse con una cuenta autorizada. Las extensiones `btree_gist` y `pgcrypto` también deben estar disponibles.
 
-La base incluye afiliados e historiales de ejemplo. No cargues información médica real en esta instancia pública.
+Los usuarios creados directamente con `CREATE ROLE` no son credenciales administradas por Render y no aparecen en su panel. No publiques variables secretas, datos de pacientes ni credenciales.
 
-El plan gratuito sirve para demostración: Render puede dormir el sitio tras 15 minutos sin visitas y su PostgreSQL gratuito vence a los 30 días. Para conservar datos y uso continuo, elige un plan de base de datos que no expire antes de crear el Blueprint.
+El contenedor se detiene si detecta la antigua tabla `afiliado`, para evitar sobrescribir la base anterior. Este proyecto no incluye una migración automática; respalda los datos y crea una base aparte para esta versión.

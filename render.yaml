@@ -12,7 +12,17 @@ services:
         fromDatabase:
           name: eps-villavicencio-db
           property: connectionString
-      - key: APP_ACCESS_PASSWORD
+      - key: DB_USER
+        value: eps_app
+      - key: DB_PASSWORD
+        generateValue: true
+      - key: DB_ADMIN_USER
+        value: eps_admin
+      - key: DB_ADMIN_PASSWORD
+        generateValue: true
+      - key: APP_ADMIN_USERNAME
+        value: admin
+      - key: APP_ADMIN_PASSWORD
         generateValue: true
 
 databases:
@@ -20,4 +30,4 @@ databases:
     plan: free
     region: oregon
     databaseName: eps_villavicencio
-    user: eps_app
+    user: eps_owner
