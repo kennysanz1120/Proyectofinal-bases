@@ -42,54 +42,6 @@ sudo -u postgres psql -d eps_villavicencio_local -v ON_ERROR_STOP=1 -f proyecto.
 
 El script ordena y crea las tablas, roles y permisos funcionales, restricciones, funciones, disparadores y datos de ejemplo. La primera vez pedirá una contraseña para el usuario PostgreSQL `eps_app`; guárdala para el siguiente paso. El script se ejecuta una vez por cada base vacía.
 
-Si ya importaste la versión anterior del proyecto y quieres conservar esa base, **no vuelvas a ejecutar `proyecto.sql`**. Entra a la base actual y agrega los cuatro consultorios nuevos con este SQL; luego inicia sesión como administrador y crea los tres médicos indicados más abajo desde el formulario de cuentas médicas:
-
-```sql
-INSERT INTO consultorio (nombre, ubicacion, capacidad) VALUES
-    ('Consultorio 103', 'Piso 1', 2),
-    ('Consultorio 202', 'Piso 2', 2),
-    ('Consultorio 203', 'Piso 2', 2),
-    ('Consultorio 301', 'Piso 3', 2)
-ON CONFLICT (nombre) DO NOTHING;
-```
-
-Usa estos nombres, especialidades y consultorios en el formulario: Carolina Gil — Cardiología — Consultorio 202; Felipe Ruiz — Dermatología — Consultorio 203; Natalia Santos — Ginecología y obstetricia — Consultorio 301. Asigna a cada cuenta un usuario y contraseña temporal; después agrega sus horarios.
-
-Para actualizar únicamente el copago de una base ya creada, ejecuta también dentro de `psql`:
-
-```sql
-UPDATE tarifa
-   SET porcentaje_cobro = CASE nombre
-       WHEN 'Categoría A' THEN 0
-       WHEN 'Categoría B' THEN 5
-       WHEN 'Categoría C' THEN 10
-       ELSE porcentaje_cobro
-   END
- WHERE nombre IN ('Categoría A', 'Categoría B', 'Categoría C');
-
-CREATE OR REPLACE FUNCTION calcular_valor_cita() RETURNS TRIGGER AS $$
-DECLARE
-    costo NUMERIC(10,2);
-    porcentaje NUMERIC(5,2);
-BEGIN
-    SELECT s.costo_base, t.porcentaje_cobro
-      INTO costo, porcentaje
-      FROM servicio s
-      JOIN pacientes p ON p.id_paciente = NEW.id_paciente
-      JOIN tarifa t ON t.id_tarifa = p.id_tarifa
-     WHERE s.id_servicio = NEW.id_servicio;
-
-    IF costo IS NULL OR porcentaje IS NULL THEN
-        RAISE EXCEPTION 'No se encontró el servicio o la tarifa del paciente.';
-    END IF;
-
-    NEW.valor_cobrado := LEAST(ROUND(costo * porcentaje / 100, 2), 10000.00);
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-```
-
-Esto actualiza la tarifa y el disparador sin volver a crear las tablas ni alterar los cobros de citas ya registradas.
 
 ### 3. Configurar la conexión en la misma terminal
 
