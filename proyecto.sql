@@ -154,18 +154,27 @@ CREATE TABLE cita (
 
 
 
--- Catálogos necesarios para los formularios y las reglas del sistema.
+-- Datos de catálogo necesarios para usar los formularios.
 INSERT INTO tipo_documento (sigla, nombre) VALUES
-    ('CN','Certificado de nacido vivo'), ('RC','Registro civil de nacimiento'),
-    ('TI','Tarjeta de identidad'), ('CC','Cédula de ciudadanía'),
-    ('CE','Cédula de extranjería'), ('PA','Pasaporte'),
-    ('CD','Carné diplomático'), ('SC','Salvoconducto de permanencia'),
-    ('PEP','Permiso especial de permanencia'), ('PPT','Permiso por protección temporal');
+    ('CN','Certificado de nacido vivo'),
+    ('RC','Registro civil de nacimiento'),
+    ('TI','Tarjeta de identidad'),
+    ('CC','Cédula de ciudadanía'),
+    ('CE','Cédula de extranjería'),
+    ('PA','Pasaporte'),
+    ('CD','Carné diplomático'),
+    ('SC','Salvoconducto de permanencia'),
+    ('PEP','Permiso especial de permanencia'),
+    ('PPT','Permiso por protección temporal');
 
 INSERT INTO estado (nombre, ambito) VALUES
-    ('Disponible','horario'), ('Ocupado','horario'),
-    ('Programada','cita'), ('Atendida','cita'), ('Cancelada','cita'),
-    ('Activo','consultorio'), ('Inactivo','consultorio');
+    ('Disponible','horario'),
+    ('Ocupado','horario'),
+    ('Programada','cita'),
+    ('Atendida','cita'),
+    ('Cancelada','cita'),
+    ('Activo','consultorio'),
+    ('Inactivo','consultorio');
 
 INSERT INTO tarifa (nombre, ingreso_min, ingreso_max, porcentaje_cobro) VALUES
     ('Categoría A',0,1000000,0),
@@ -173,12 +182,18 @@ INSERT INTO tarifa (nombre, ingreso_min, ingreso_max, porcentaje_cobro) VALUES
     ('Categoría C',2500000.01,9999999999.99,10);
 
 INSERT INTO especialidad (nombre, descripcion) VALUES
-    ('Medicina general','Atención primaria'), ('Pediatría','Salud infantil'),
-    ('Odontología','Salud oral'), ('Cardiología','Sistema cardiovascular'),
-    ('Dermatología','Salud de la piel'), ('Ginecología y obstetricia','Salud de la mujer'),
-    ('Oftalmología','Salud visual'), ('Ortopedia','Sistema osteomuscular'),
-    ('Medicina interna','Atención integral del adulto'), ('Psicología','Salud mental'),
-    ('Nutrición','Alimentación y nutrición'), ('Enfermería','Cuidados de enfermería');
+    ('Medicina general','Atención primaria'),
+    ('Pediatría','Salud infantil'),
+    ('Odontología','Salud oral'),
+    ('Cardiología','Sistema cardiovascular'),
+    ('Dermatología','Salud de la piel'),
+    ('Ginecología y obstetricia','Salud de la mujer'),
+    ('Oftalmología','Salud visual'),
+    ('Ortopedia','Sistema osteomuscular'),
+    ('Medicina interna','Atención integral del adulto'),
+    ('Psicología','Salud mental'),
+    ('Nutrición','Alimentación y nutrición'),
+    ('Enfermería','Cuidados de enfermería');
 
 INSERT INTO servicio (nombre, descripcion, costo_base) VALUES
     ('Medicina general','Consulta médica general',50000),
@@ -191,117 +206,97 @@ INSERT INTO servicio (nombre, descripcion, costo_base) VALUES
     ('Cardiología','Consulta cardiovascular',100000),
     ('Dermatología','Consulta de piel',90000),
     ('Ginecología','Consulta ginecológica',90000),
-    ('Oftalmología','Valoración visual',85000), ('Ortopedia','Valoración osteomuscular',95000),
+    ('Oftalmología','Valoración visual',85000),
+    ('Ortopedia','Valoración osteomuscular',95000),
     ('Medicina interna','Consulta de medicina interna',90000),
-    ('Psicología','Consulta psicológica',80000), ('Nutrición','Consulta nutricional',65000),
+    ('Psicología','Consulta psicológica',80000),
+    ('Nutrición','Consulta nutricional',65000),
     ('Enfermería','Procedimientos básicos de enfermería',35000);
 
--- Relaciona cada servicio con las especialidades que pueden atenderlo.
-INSERT INTO servicio_especialidad (id_servicio, id_especialidad)
-SELECT s.id_servicio, e.id_especialidad
-FROM (VALUES
-    ('Medicina general','Medicina general'), ('Control de medicina general','Medicina general'),
-    ('Consulta preventiva','Medicina general'), ('Pediatría','Pediatría'),
-    ('Control de crecimiento y desarrollo','Pediatría'), ('Odontología general','Odontología'),
-    ('Limpieza dental','Odontología'), ('Cardiología','Cardiología'),
-    ('Dermatología','Dermatología'), ('Ginecología','Ginecología y obstetricia'),
-    ('Oftalmología','Oftalmología'), ('Ortopedia','Ortopedia'),
-    ('Medicina interna','Medicina interna'), ('Psicología','Psicología'),
-    ('Nutrición','Nutrición'), ('Enfermería','Enfermería')
-) AS m(servicio_nombre, especialidad_nombre)
-JOIN servicio s ON s.nombre = m.servicio_nombre
-JOIN especialidad e ON e.nombre = m.especialidad_nombre;
+-- Los IDs se generan en el orden de inserción anterior en una base vacía.
+-- CC es el tipo 4; las especialidades y los servicios se numeran desde 1.
+INSERT INTO servicio_especialidad (id_servicio, id_especialidad) VALUES
+    (1,1), (2,1), (3,1), (4,2), (5,2), (6,3), (7,3), (8,4),
+    (9,5), (10,6), (11,7), (12,8), (13,9), (14,10), (15,11), (16,12);
 
-INSERT INTO consultorio (nombre, ubicacion, capacidad, id_estado)
-SELECT x.nombre, x.ubicacion, x.capacidad, e.id_estado
-FROM (VALUES
-    ('Consultorio 101','Piso 1',3), ('Consultorio 102','Piso 1',3),
-    ('Consultorio 201','Piso 2',2), ('Consultorio 103','Piso 1',2),
-    ('Consultorio 202','Piso 2',2), ('Consultorio 203','Piso 2',2),
-    ('Consultorio 301','Piso 3',2)
-) AS x(nombre, ubicacion, capacidad)
-JOIN estado e ON e.ambito = 'consultorio' AND e.nombre = 'Activo';
+-- El estado Activo corresponde al ID 6.
+INSERT INTO consultorio (nombre, ubicacion, capacidad, id_estado) VALUES
+    ('Consultorio 101','Piso 1',3,6),
+    ('Consultorio 102','Piso 1',3,6),
+    ('Consultorio 201','Piso 2',2,6),
+    ('Consultorio 103','Piso 1',2,6),
+    ('Consultorio 202','Piso 2',2,6),
+    ('Consultorio 203','Piso 2',2,6),
+    ('Consultorio 301','Piso 3',2,6);
 
-INSERT INTO consultorio_especialidad (id_consultorio, id_especialidad)
-SELECT c.id_consultorio, e.id_especialidad
-FROM (VALUES
-    ('Consultorio 101','Medicina general'), ('Consultorio 102','Pediatría'),
-    ('Consultorio 201','Odontología'), ('Consultorio 202','Cardiología'),
-    ('Consultorio 203','Dermatología'), ('Consultorio 301','Ginecología y obstetricia'),
-    ('Consultorio 103','Oftalmología'), ('Consultorio 103','Ortopedia'),
-    ('Consultorio 103','Medicina interna'), ('Consultorio 103','Psicología'),
-    ('Consultorio 103','Nutrición'), ('Consultorio 103','Enfermería')
-) AS x(consultorio, especialidad)
-JOIN consultorio c ON c.nombre = x.consultorio
-JOIN especialidad e ON e.nombre = x.especialidad;
+-- Asocia los consultorios y las especialidades usando sus IDs.
+INSERT INTO consultorio_especialidad (id_consultorio, id_especialidad) VALUES
+    (1,1), (2,2), (3,3), (5,4), (6,5), (7,6),
+    (4,7), (4,8), (4,9), (4,10), (4,11), (4,12);
 
--- Datos de demostración:
--- La contraseña de demostración para todas las cuentas es 2345.
-INSERT INTO usuario (username, password_hash)
-SELECT x.username, '$2y$12$XZWRqvXpBqAbC2UOy5lOYuVvx8oG3HEQLZNRzAUSUHr1BXLY5X6'
-FROM (VALUES
-    ('99999999'), ('diana.rojas'), ('carlos.mejia'), ('lucia.torres'),
-    ('andres.mora'), ('carolina.gil'), ('felipe.ruiz'), ('natalia.santos'),
-    ('ana.martinez'), ('luis.gomez'), ('laura.ramirez'), ('miguel.perez'),
-    ('sofia.lopez'), ('juan.hernandez'), ('valentina.diaz')
-) AS x(username);
+-- Datos de demostración: un administrador, siete médicos y siete afiliados.
+-- La contraseña de todas las cuentas de demostración es 2345.
+INSERT INTO usuario (username, password_hash) VALUES
+    ('99999999','$2y$12$XZWRqvXpBqAbC2UOy5lOYuVvx8oG3HEQLZNRzAUSUHr1BXLY5X6'),
+    ('diana.rojas','$2y$12$XZWRqvXpBqAbC2UOy5lOYuVvx8oG3HEQLZNRzAUSUHr1BXLY5X6'),
+    ('carlos.mejia','$2y$12$XZWRqvXpBqAbC2UOy5lOYuVvx8oG3HEQLZNRzAUSUHr1BXLY5X6'),
+    ('lucia.torres','$2y$12$XZWRqvXpBqAbC2UOy5lOYuVvx8oG3HEQLZNRzAUSUHr1BXLY5X6'),
+    ('andres.mora','$2y$12$XZWRqvXpBqAbC2UOy5lOYuVvx8oG3HEQLZNRzAUSUHr1BXLY5X6'),
+    ('carolina.gil','$2y$12$XZWRqvXpBqAbC2UOy5lOYuVvx8oG3HEQLZNRzAUSUHr1BXLY5X6'),
+    ('felipe.ruiz','$2y$12$XZWRqvXpBqAbC2UOy5lOYuVvx8oG3HEQLZNRzAUSUHr1BXLY5X6'),
+    ('natalia.santos','$2y$12$XZWRqvXpBqAbC2UOy5lOYuVvx8oG3HEQLZNRzAUSUHr1BXLY5X6'),
+    ('ana.martinez','$2y$12$XZWRqvXpBqAbC2UOy5lOYuVvx8oG3HEQLZNRzAUSUHr1BXLY5X6'),
+    ('luis.gomez','$2y$12$XZWRqvXpBqAbC2UOy5lOYuVvx8oG3HEQLZNRzAUSUHr1BXLY5X6'),
+    ('laura.ramirez','$2y$12$XZWRqvXpBqAbC2UOy5lOYuVvx8oG3HEQLZNRzAUSUHr1BXLY5X6'),
+    ('miguel.perez','$2y$12$XZWRqvXpBqAbC2UOy5lOYuVvx8oG3HEQLZNRzAUSUHr1BXLY5X6'),
+    ('sofia.lopez','$2y$12$XZWRqvXpBqAbC2UOy5lOYuVvx8oG3HEQLZNRzAUSUHr1BXLY5X6'),
+    ('juan.hernandez','$2y$12$XZWRqvXpBqAbC2UOy5lOYuVvx8oG3HEQLZNRzAUSUHr1BXLY5X6'),
+    ('valentina.diaz','$2y$12$XZWRqvXpBqAbC2UOy5lOYuVvx8oG3HEQLZNRzAUSUHr1BXLY5X6');
 
-INSERT INTO medico (id_usuario, id_tipo_doc, num_documento, nombre1, apellido1, telefono, correo, id_especialidad, id_consultorio)
-SELECT u.id_usuario, td.id_tipo_doc, x.documento, x.nombre, x.apellido,
-       '3005550100', x.username || '@eps.local', e.id_especialidad, c.id_consultorio
-FROM (VALUES
-    ('diana.rojas','90000001','Diana','Rojas','Medicina general','Consultorio 101'),
-    ('carlos.mejia','90000002','Carlos','Mejía','Pediatría','Consultorio 102'),
-    ('lucia.torres','90000003','Lucía','Torres','Odontología','Consultorio 201'),
-    ('andres.mora','90000004','Andrés','Mora','Medicina general','Consultorio 101'),
-    ('carolina.gil','90000005','Carolina','Gil','Cardiología','Consultorio 202'),
-    ('felipe.ruiz','90000006','Felipe','Ruiz','Dermatología','Consultorio 203'),
-    ('natalia.santos','90000007','Natalia','Santos','Ginecología y obstetricia','Consultorio 301')
-) AS x(username, documento, nombre, apellido, especialidad, consultorio)
-JOIN usuario u ON u.username = x.username
-JOIN tipo_documento td ON td.sigla = 'CC'
-JOIN especialidad e ON e.nombre = x.especialidad
-JOIN consultorio c ON c.nombre = x.consultorio;
+-- IDs de usuario: administrador 1, médicos 2 a 8 y afiliados 9 a 15.
+-- ID del tipo de documento CC: 4.
+INSERT INTO medico (id_usuario, id_tipo_doc, num_documento, nombre1, apellido1, telefono, correo, id_especialidad, id_consultorio) VALUES
+    (2,4,'90000001','Diana','Rojas','3005550100','diana.rojas@eps.local',1,1),
+    (3,4,'90000002','Carlos','Mejía','3005550100','carlos.mejia@eps.local',2,2),
+    (4,4,'90000003','Lucía','Torres','3005550100','lucia.torres@eps.local',3,3),
+    (5,4,'90000004','Andrés','Mora','3005550100','andres.mora@eps.local',1,1),
+    (6,4,'90000005','Carolina','Gil','3005550100','carolina.gil@eps.local',4,5),
+    (7,4,'90000006','Felipe','Ruiz','3005550100','felipe.ruiz@eps.local',5,6),
+    (8,4,'90000007','Natalia','Santos','3005550100','natalia.santos@eps.local',6,7);
 
--- Un afiliado se inserta por separado para mostrar el ejemplo individual.
+-- Un afiliado individual como ejemplo del INSERT.
+-- Las tarifas A, B y C tienen IDs 1, 2 y 3, respectivamente.
 INSERT INTO afiliado (id_usuario, id_tipo_doc, num_doc, nombre1, apellido1, fecha_nacimiento, telefono, correo, direccion, ingreso_mensual, id_tarifa, estado_afiliacion)
-VALUES (
-    (SELECT id_usuario FROM usuario WHERE username = 'ana.martinez'),
-    (SELECT id_tipo_doc FROM tipo_documento WHERE sigla = 'CC'),
-    '10000001', 'Ana', 'Martínez', DATE '1995-01-02', '3005550001',
-    'ana.martinez@correo.local', 'Villavicencio', 800000,
-    (SELECT id_tarifa FROM tarifa WHERE 800000 BETWEEN ingreso_min AND ingreso_max),
-    'Activo'
-);
+VALUES (9,4,'10000001','Ana','Martínez',DATE '1995-01-02','3005550001','ana.martinez@correo.local','Villavicencio',800000,1,'Activo');
 
--- Seis afiliados adicionales completan las 15 cuentas y muestran las categorías.
-INSERT INTO afiliado (id_usuario, id_tipo_doc, num_doc, nombre1, apellido1, fecha_nacimiento, telefono, correo, direccion, ingreso_mensual, id_tarifa, estado_afiliacion)
-SELECT u.id_usuario, td.id_tipo_doc, x.documento, x.nombre, x.apellido,
-       x.fecha_nacimiento, x.telefono, x.correo, 'Villavicencio', x.ingreso,
-       t.id_tarifa, x.estado_afiliacion
-FROM (VALUES
-    ('luis.gomez','10000002','Luis','Gómez',DATE '1994-05-12','3005550002','luis.gomez@correo.local',900000,'Pendiente'),
-    ('laura.ramirez','10000003','Laura','Ramírez',DATE '1992-06-18','3005550003','laura.ramirez@correo.local',1800000,'Activo'),
-    ('miguel.perez','10000004','Miguel','Pérez',DATE '1990-07-24','3005550004','miguel.perez@correo.local',1800000,'Pendiente'),
-    ('sofia.lopez','10000005','Sofía','López',DATE '1996-08-30','3005550005','sofia.lopez@correo.local',2200000,'Pendiente'),
-    ('juan.hernandez','10000006','Juan','Hernández',DATE '1988-09-14','3005550006','juan.hernandez@correo.local',3200000,'Activo'),
-    ('valentina.diaz','10000007','Valentina','Díaz',DATE '1998-10-21','3005550007','valentina.diaz@correo.local',3200000,'Pendiente')
-) AS x(username, documento, nombre, apellido, fecha_nacimiento, telefono, correo, ingreso, estado_afiliacion)
-JOIN usuario u ON u.username = x.username
-JOIN tipo_documento td ON td.sigla = 'CC'
-JOIN tarifa t ON x.ingreso BETWEEN t.ingreso_min AND t.ingreso_max;
+-- Seis afiliados adicionales completan las 15 cuentas y representan las categorías.
+INSERT INTO afiliado (id_usuario, id_tipo_doc, num_doc, nombre1, apellido1, fecha_nacimiento, telefono, correo, direccion, ingreso_mensual, id_tarifa, estado_afiliacion) VALUES
+    (10,4,'10000002','Luis','Gómez',DATE '1994-05-12','3005550002','luis.gomez@correo.local','Villavicencio',900000,1,'Pendiente'),
+    (11,4,'10000003','Laura','Ramírez',DATE '1992-06-18','3005550003','laura.ramirez@correo.local','Villavicencio',1800000,2,'Activo'),
+    (12,4,'10000004','Miguel','Pérez',DATE '1990-07-24','3005550004','miguel.perez@correo.local','Villavicencio',1800000,2,'Pendiente'),
+    (13,4,'10000005','Sofía','López',DATE '1996-08-30','3005550005','sofia.lopez@correo.local','Villavicencio',2200000,2,'Pendiente'),
+    (14,4,'10000006','Juan','Hernández',DATE '1988-09-14','3005550006','juan.hernandez@correo.local','Villavicencio',3200000,3,'Activo'),
+    (15,4,'10000007','Valentina','Díaz',DATE '1998-10-21','3005550007','valentina.diaz@correo.local','Villavicencio',3200000,3,'Pendiente');
 
-INSERT INTO historial (id_afiliado, alergias, grupo_sanguineo, antecedentes)
-SELECT id_afiliado, 'Sin alergias registradas', 'O+', 'Sin antecedentes registrados'
-FROM afiliado;
+-- Un historial de muestra para cada afiliado.
+INSERT INTO historial (id_afiliado, alergias, grupo_sanguineo, antecedentes) VALUES
+    (1,'Sin alergias registradas','O+','Sin antecedentes registrados'),
+    (2,'Sin alergias registradas','O+','Sin antecedentes registrados'),
+    (3,'Sin alergias registradas','O+','Sin antecedentes registrados'),
+    (4,'Sin alergias registradas','O+','Sin antecedentes registrados'),
+    (5,'Sin alergias registradas','O+','Sin antecedentes registrados'),
+    (6,'Sin alergias registradas','O+','Sin antecedentes registrados'),
+    (7,'Sin alergias registradas','O+','Sin antecedentes registrados');
 
-INSERT INTO horario (id_medico, fecha, hora_inicio, hora_fin, id_estado)
-SELECT m.id_medico, CURRENT_DATE + 1,
-       TIME '08:00' + (g.slot * INTERVAL '1 hour'),
-       TIME '09:00' + (g.slot * INTERVAL '1 hour'), e.id_estado
-FROM medico m
-CROSS JOIN generate_series(0, 2) AS g(slot)
-JOIN estado e ON e.ambito = 'horario' AND e.nombre = 'Disponible';
+-- Estado Disponible tiene ID 1; cada médico recibe un horario inicial.
+INSERT INTO horario (id_medico, fecha, hora_inicio, hora_fin, id_estado) VALUES
+    (1,CURRENT_DATE + 1,TIME '08:00',TIME '09:00',1),
+    (2,CURRENT_DATE + 1,TIME '08:00',TIME '09:00',1),
+    (3,CURRENT_DATE + 1,TIME '08:00',TIME '09:00',1),
+    (4,CURRENT_DATE + 1,TIME '09:00',TIME '10:00',1),
+    (5,CURRENT_DATE + 1,TIME '09:00',TIME '10:00',1),
+    (6,CURRENT_DATE + 1,TIME '10:00',TIME '11:00',1),
+    (7,CURRENT_DATE + 1,TIME '10:00',TIME '11:00',1);
 
 -- Evita que un afiliado tenga dos citas pendientes que se crucen en el tiempo.
 CREATE OR REPLACE FUNCTION evitar_citas_traslapadas_afiliado()
@@ -453,6 +448,11 @@ CREATE TRIGGER trg_actualizar_estado_horario
 AFTER INSERT OR UPDATE OR DELETE ON cita
 FOR EACH ROW EXECUTE FUNCTION actualizar_estado_horario();
 
+
+-- Cita de ejemplo para probar copago y ocupación del horario.
+-- IDs de afiliado, servicio, horario y estado: 1, 1, 1 y 3.
+INSERT INTO cita (id_afiliado, id_servicio, id_horario, id_estado)
+VALUES (1,1,1,3);
 
 -- Permisos de conexión y grupos PostgreSQL.
 DO $$ BEGIN
