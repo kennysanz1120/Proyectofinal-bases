@@ -1,48 +1,77 @@
 erDiagram
-    ROLES ||--o{ USUARIOS : asigna
-    ROLES ||--o{ ROL_PERMISO : autoriza
-    PERMISOS ||--o{ ROL_PERMISO : incluye
-    USUARIOS ||--o| PACIENTES : perfil
-    USUARIOS ||--o| MEDICOS : perfil
-    TIPO_DOCUMENTO ||--o{ PACIENTES : identifica
-    TIPO_DOCUMENTO ||--o{ MEDICOS : identifica
-    TARIFA ||--o{ PACIENTES : clasifica
-    PACIENTES ||--|| HISTORIAL : tiene
-    ESPECIALIDAD ||--o{ MEDICOS : especializa
-    ESPECIALIDAD ||--o{ SERVICIO : agrupa
-    CONSULTORIO ||--o{ MEDICOS : asigna
-    MEDICOS ||--o{ HORARIO : programa
+    ESTADO ||--o{ CONSULTORIO : clasifica
     ESTADO ||--o{ HORARIO : clasifica
-    PACIENTES ||--o{ CITA : reserva
+    ESTADO ||--o{ CITA : clasifica
+
+    USUARIO ||--o| AFILIADO : perfil
+    USUARIO ||--o| MEDICO : perfil
+    TIPO_DOCUMENTO ||--o{ AFILIADO : identifica
+    TIPO_DOCUMENTO ||--o{ MEDICO : identifica
+    TARIFA ||--o{ AFILIADO : determina_copago
+    AFILIADO ||--o| HISTORIAL : tiene
+
+    CONSULTORIO ||--o{ CONSULTORIO_ESPECIALIDAD : habilita
+    ESPECIALIDAD ||--o{ CONSULTORIO_ESPECIALIDAD : disponible_en
+    CONSULTORIO_ESPECIALIDAD ||--o{ MEDICO : asignacion
+
+    SERVICIO ||--o{ SERVICIO_ESPECIALIDAD : requiere
+    ESPECIALIDAD ||--o{ SERVICIO_ESPECIALIDAD : atiende
+    MEDICO ||--o{ HORARIO : programa
+    AFILIADO ||--o{ CITA : reserva
     SERVICIO ||--o{ CITA : solicita
     HORARIO ||--o| CITA : ocupa
-    ESTADO ||--o{ CITA : clasifica
-    CITA ||--o| RESULTADO_CONSULTA : recibe
-    MEDICOS ||--o{ RESULTADO_CONSULTA : registra
 
-    ROLES {
-        smallint id_rol PK
-        varchar codigo UK
+    ESTADO {
+        smallint id_estado PK
+        varchar nombre
+        varchar ambito
+    }
+    TIPO_DOCUMENTO {
+        smallint id_tipo_doc PK
+        varchar sigla UK
         varchar nombre
     }
-    PERMISOS {
-        smallint id_permiso PK
-        varchar codigo UK
-        varchar descripcion
+    TARIFA {
+        smallint id_tarifa PK
+        varchar nombre UK
+        numeric ingreso_min
+        numeric ingreso_max
+        numeric porcentaje_cobro
     }
-    ROL_PERMISO {
-        smallint id_rol PK, FK
-        smallint id_permiso PK, FK
+    ESPECIALIDAD {
+        smallint id_especialidad PK
+        varchar nombre UK
+        text descripcion
     }
-    USUARIOS {
+    SERVICIO {
+        smallint id_servicio PK
+        varchar nombre UK
+        text descripcion
+        numeric costo_base
+    }
+    SERVICIO_ESPECIALIDAD {
+        smallint id_servicio PK, FK
+        smallint id_especialidad PK, FK
+    }
+    CONSULTORIO {
+        smallint id_consultorio PK
+        varchar nombre UK
+        varchar ubicacion
+        smallint capacidad
+        smallint id_estado FK
+    }
+    CONSULTORIO_ESPECIALIDAD {
+        smallint id_consultorio PK, FK
+        smallint id_especialidad PK, FK
+    }
+    USUARIO {
         integer id_usuario PK
         varchar username UK
         varchar password_hash
-        smallint id_rol FK
         boolean activo
     }
-    PACIENTES {
-        integer id_paciente PK
+    AFILIADO {
+        integer id_afiliado PK
         integer id_usuario FK, UK
         smallint id_tipo_doc FK
         varchar num_doc
@@ -52,11 +81,11 @@ erDiagram
         varchar estado_afiliacion
         smallint id_tarifa FK
     }
-    MEDICOS {
+    MEDICO {
         integer id_medico PK
         integer id_usuario FK, UK
         smallint id_tipo_doc FK
-        varchar num_doc
+        varchar num_documento
         varchar nombre1
         varchar apellido1
         smallint id_especialidad FK
@@ -64,10 +93,12 @@ erDiagram
     }
     HISTORIAL {
         integer id_historial PK
-        integer id_paciente FK, UK
+        integer id_afiliado FK, UK
+        date fecha_apertura
         text alergias
         varchar grupo_sanguineo
         text antecedentes
+        text observaciones
     }
     HORARIO {
         integer id_horario PK
@@ -79,21 +110,10 @@ erDiagram
     }
     CITA {
         integer id_cita PK
-        integer id_paciente FK
+        integer id_afiliado FK
         smallint id_servicio FK
         integer id_horario FK, UK
+        timestamp fecha_solicitud
         smallint id_estado FK
         numeric valor_cobrado
-    }
-    SERVICIO {
-        smallint id_servicio PK
-        varchar nombre
-        numeric costo_base
-        smallint id_especialidad FK
-    }
-    RESULTADO_CONSULTA {
-        integer id_resultado PK
-        integer id_cita FK, UK
-        integer id_medico FK
-        text resultado
     }
