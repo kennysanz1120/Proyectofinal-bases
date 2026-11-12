@@ -309,7 +309,9 @@ INSERT INTO horario (id_medico, fecha, hora_inicio, hora_fin, id_estado) VALUES
     (6,CURRENT_DATE + 1,TIME '10:00',TIME '11:00',1),
     (7,CURRENT_DATE + 1,TIME '10:00',TIME '11:00',1);
 
--- Evita que un afiliado tenga dos citas pendientes que se crucen en el tiempo.
+-- Disparador que evita que un afiliado tenga dos citas pendientes que se crucen.
+-- PostgreSQL ejecuta el cuerpo del disparador mediante una función RETURNS TRIGGER;
+-- esta función interna no se llama desde PHP ni desde formularios.
 CREATE OR REPLACE FUNCTION evitar_citas_traslapadas_afiliado()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -338,6 +340,10 @@ BEGIN
     INTO fecha_nueva, inicio_nuevo, fin_nuevo
     FROM horario
     WHERE id_horario = NEW.id_horario;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Selecciona un horario válido para la cita.';
+    END IF;
 
     SELECT c.id_cita INTO cita_en_conflicto
     FROM cita c
