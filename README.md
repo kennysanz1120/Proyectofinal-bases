@@ -68,22 +68,6 @@ php -S 127.0.0.1:8000
 
 Abre <http://127.0.0.1:8000>. El servidor escucha solo en `127.0.0.1`, por lo que la aplicación se usa localmente. Detén el servidor con `Ctrl+C`.
 
-> Esta versión añade el tope de copago a `tarifa` y elimina el campo de monto salarial de `afiliado`. Para conservar una base anterior, haz primero una copia y ejecuta una sola vez, conectado a esa base:
->
-> ```sql
-> BEGIN;
-> ALTER TABLE afiliado DROP COLUMN IF EXISTS ingreso_mensual;
-> ALTER TABLE tarifa ADD COLUMN IF NOT EXISTS tope_copago NUMERIC(12,2);
-> UPDATE tarifa SET ingreso_min=0, ingreso_max=3501809.99, porcentaje_cobro=11.50, tope_copago=373715 WHERE nombre='Categoría A';
-> UPDATE tarifa SET ingreso_min=3501810, ingreso_max=8754525, porcentaje_cobro=17.30, tope_copago=1497644 WHERE nombre='Categoría B';
-> UPDATE tarifa SET ingreso_min=8754525.01, ingreso_max=9999999999.99, porcentaje_cobro=23.00, tope_copago=2995409 WHERE nombre='Categoría C';
-> ALTER TABLE tarifa ALTER COLUMN tope_copago SET NOT NULL;
-> COMMIT;
-> ```
->
-> Los montos salariales guardados se eliminan; la categoría de cada afiliado permanece. Para una base nueva, importa `proyecto.sql` una sola vez.
-
-`config.php` usa por defecto la base `eps_villavicencio` y el usuario local `eps_app`. Si necesitas otros datos de conexión, puedes definir las variables `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER` y `DB_PASSWORD` antes de iniciar PHP.
 
 ## Cuentas de demostración
 
@@ -147,6 +131,22 @@ Los permisos de la interfaz restringen las acciones disponibles para cada perfil
 - Los nombres no aceptan números; documentos, teléfonos y fechas se validan en los formularios y en la base de datos.
 - El copago toma el porcentaje y el tope por evento definidos para la categoría asignada.
 - Los disparadores calculan el copago, actualizan el estado del horario, conservan citas al borrar un horario y guardan auditoría de las operaciones principales.
+
+## Funciones y disparadores de PostgreSQL
+
+Las funciones siguientes están definidas en `proyecto.sql`. En PostgreSQL, los disparadores ejecutan funciones `RETURNS TRIGGER`; estas funciones son su lógica interna y no se invocan directamente desde los formularios PHP.
+
+| Función | Disparador asociado | Descripción |
+| --- | --- | --- |
+| `evitar_citas_traslapadas_afiliado()` | `trg_evitar_citas_traslapadas_afiliado` | Antes de crear o cambiar una cita programada, impide que el mismo afiliado tenga otra cita pendiente que se cruce en fecha y hora. |
+| `limpiar_horarios_vencidos()` | Se invoca al abrir una solicitud de la aplicación y desde `disparador_limpieza_horarios_vencidos()` | Elimina horarios disponibles que ya vencieron y que no tienen citas asociadas. |
+| `disparador_limpieza_horarios_vencidos()` | `limpiar_horarios_vencidos_al_cambiar` | Después de insertar o actualizar un horario, ejecuta la limpieza de horarios vencidos. |
+| `calcular_valor_cita()` | `trg_calcular_valor_cita` | Antes de crear o cambiar una cita, calcula el copago con el costo del servicio, la tarifa del afiliado y el tope definido. |
+| `actualizar_estado_horario()` | `trg_actualizar_estado_horario` | Después de insertar, actualizar o borrar una cita, marca su horario como Ocupado si corresponde o lo vuelve a Disponible. |
+| `conservar_cita_al_eliminar_horario()` | `trg_conservar_cita_al_eliminar_horario` | Antes de borrar un horario reservado, guarda la fecha y el médico previos, desvincula la cita del horario y deja la cita en Reprogramación. |
+| `registrar_cambio_auditoria()` | Los disparadores `aud_*` | Registra operaciones INSERT, UPDATE y DELETE en `auditoria_cambios`, con los valores anteriores y nuevos; excluye el hash de contraseña. |
+
+Los disparadores `aud_*` ejecutan `registrar_cambio_auditoria()` en las tablas `usuario`, `afiliado`, `medico`, `historial`, `horario`, `cita`, `tipo_documento`, `estado`, `tarifa`, `especialidad`, `servicio`, `servicio_especialidad`, `consultorio` y `consultorio_especialidad`.
 
 ## Modelo entidad-relación
 
@@ -309,13 +309,15 @@ Las consultas que reciben datos del navegador usan `prepare()` y `execute()` par
 
 ## Módulos del panel
 
-Después del inicio de sesión, el menú permite saltar a las tareas propias del perfil. El administrador tiene Resumen, Afiliados, Médicos y salas, Horarios, Citas y Auditoría. El afiliado tiene Resumen, Agendar cita, Mis citas y Cambiar contraseña. El médico tiene Mi agenda, Mis horarios (solo lectura), Atenciones registradas y Cambiar contraseña. Los permisos de cada acción también se verifican en el backend antes de ejecutar el SQL.
+Después del inicio de sesión, el menú permite saltar a las tareas propias del perfil. El administrador tiene Resumen, Afiliados, Médicos y salas, Horarios, Citas, Reprogramaciones y Auditoría. El afiliado tiene Resumen, Agendar cita, Mis citas y Cambiar contraseña. El médico tiene Mi agenda, Mis horarios (solo lectura), Atenciones registradas y Cambiar contraseña. Los permisos de cada acción también se verifican en el backend antes de ejecutar el SQL.
 
 La tabla `auditoria_cambios` almacena fecha, acción, tabla, usuario PostgreSQL y los valores anteriores/nuevos en JSON. La base conserva esa información incluso si se cancela una cita o se elimina su horario. Cada médico puede consultar sus horarios asignados, la disponibilidad, el estado de la cita, el paciente y el servicio; esta vista no ofrece acciones para editar o eliminar horarios. La baja de médicos se hace desactivando la cuenta y retirando sus horarios futuros; no se borran sus citas ni su perfil histórico.
 
 
 ## Administración de usuarios y citas
 
-Los enlaces laterales muestran únicamente el módulo seleccionado. La sección de afiliados reúne el listado completo, búsqueda, creación, edición, cambio de contraseña y eliminación de acceso. Al eliminar un afiliado se desactiva su cuenta, la fila queda marcada en rojo y los datos permanecen para conservar el historial. Las citas futuras de ese afiliado también quedan como `Eliminada` y se resaltan en rojo; las citas atendidas se conservan como historial.
+Los enlaces laterales muestran únicamente el módulo seleccionado. La sección de afiliados reúne el listado completo, búsqueda, creación, edición, cambio de contraseña y eliminación de acceso. Al eliminar un afiliado se desactiva su cuenta, la fila queda marcada en rojo y los datos permanecen para conservar el historial. Las citas futuras de ese afiliado también quedan como `Eliminada` y se resaltan en rojo; las citas atendidas se conservan como historial. El módulo Reprogramaciones muestra por separado las citas cuyo horario fue retirado, con opciones de horarios disponibles que corresponden al servicio.
 
 Para obtener los siete perfiles de afiliado de demostración y el estado `Eliminada`, crea nuevamente la base e importa el SQL actualizado, porque `proyecto.sql` es el archivo de instalación inicial.
+
+Si la base ya existe y solo necesitas volver a aplicar la protección de horarios, desde la carpeta del proyecto ejecuta `sudo -u postgres psql -d eps_villavicencio -f migracion_trigger_citas.sql`. Esta migración reemplaza el cuerpo del disparador y vuelve a crearlo sin borrar tablas ni datos.
