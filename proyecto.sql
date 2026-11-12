@@ -1,5 +1,5 @@
--- Roles PostgreSQL: eps_app es la conexión de la aplicación; los demás
--- son grupos para accesos directos diferenciados a la base de datos.
+-- roles, eps_app es la conexión de la aplicación, los dems
+-- son grupos para accesos directos diferenciados a la base de datos
 DO $$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='eps_app') THEN
         CREATE ROLE eps_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD '2345';
@@ -16,7 +16,7 @@ BEGIN;
 
 
 
--- Catálogos del MER
+-- catalogos del MER
 CREATE TABLE tipo_documento (
     id_tipo_doc SMALLSERIAL PRIMARY KEY,
     sigla VARCHAR(5) NOT NULL UNIQUE,
@@ -35,7 +35,8 @@ CREATE TABLE tarifa (
     nombre VARCHAR(50) NOT NULL UNIQUE,
     ingreso_min NUMERIC(12,2) NOT NULL CHECK (ingreso_min >= 0),
     ingreso_max NUMERIC(12,2) NOT NULL CHECK (ingreso_max >= ingreso_min),
-    porcentaje_cobro NUMERIC(5,2) NOT NULL CHECK (porcentaje_cobro BETWEEN 0 AND 100)
+    porcentaje_cobro NUMERIC(5,2) NOT NULL CHECK (porcentaje_cobro BETWEEN 0 AND 100),
+    tope_copago NUMERIC(12,2) NOT NULL CHECK (tope_copago >= 0)
 );
 
 CREATE TABLE especialidad (
@@ -94,7 +95,6 @@ CREATE TABLE afiliado (
     telefono VARCHAR(20),
     correo VARCHAR(100),
     direccion VARCHAR(150),
-    ingreso_mensual NUMERIC(12,2) NOT NULL CHECK (ingreso_mensual >= 0),
     id_tarifa SMALLINT REFERENCES tarifa(id_tarifa),
     estado_afiliacion VARCHAR(12) NOT NULL DEFAULT 'Pendiente'--inicia en pendiente
         CHECK (estado_afiliacion IN ('Pendiente','Activo','Inactivo')),--solo recibe esos estados
@@ -145,7 +145,9 @@ CREATE TABLE cita (
     id_cita SERIAL PRIMARY KEY,
     id_afiliado INTEGER NOT NULL REFERENCES afiliado(id_afiliado),
     id_servicio SMALLINT NOT NULL REFERENCES servicio(id_servicio),
-    id_horario INTEGER NOT NULL UNIQUE REFERENCES horario(id_horario),
+    id_horario INTEGER UNIQUE REFERENCES horario(id_horario) ON DELETE SET NULL,
+    fecha_hora_anterior TIMESTAMP,
+    medico_anterior VARCHAR(120),
     fecha_solicitud TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     id_estado SMALLINT NOT NULL REFERENCES estado(id_estado),
     valor_cobrado NUMERIC(10,2) NOT NULL DEFAULT 0 CHECK (valor_cobrado >= 0)
@@ -174,12 +176,16 @@ INSERT INTO estado (nombre, ambito) VALUES
     ('Atendida','cita'),
     ('Cancelada','cita'),
     ('Activo','consultorio'),
-    ('Inactivo','consultorio');
+    ('Inactivo','consultorio'),
+    ('Reprogramacion','cita'),
+    ('Eliminada','cita');
 
-INSERT INTO tarifa (nombre, ingreso_min, ingreso_max, porcentaje_cobro) VALUES
-    ('Categoría A',0,1000000,0),
-    ('Categoría B',1000000.01,2500000,5),
-    ('Categoría C',2500000.01,9999999999.99,10);
+-- Rangos 2026 calculados con un SMMLV de $1.750.905 COP.
+-- El tope corresponde al máximo de copago por evento publicado para el régimen contributivo.
+INSERT INTO tarifa (nombre, ingreso_min, ingreso_max, porcentaje_cobro, tope_copago) VALUES
+    ('Categoría A',0,3501809.99,11.50,373715),
+    ('Categoría B',3501810,8754525,17.30,1497644),
+    ('Categoría C',8754525.01,9999999999.99,23.00,2995409);
 
 INSERT INTO especialidad (nombre, descripcion) VALUES
     ('Medicina general','Atención primaria'),
@@ -237,21 +243,21 @@ INSERT INTO consultorio_especialidad (id_consultorio, id_especialidad) VALUES
 -- Datos de demostración: un administrador, siete médicos y siete afiliados.
 -- La contraseña de todas las cuentas de demostración es 2345.
 INSERT INTO usuario (username, password_hash) VALUES
-    ('99999999','$2y$12$XZWRqvXpBqAbC2UOy5lOYuVvx8oG3HEQLZNRzAUSUHr1BXLY5X6'),
-    ('diana.rojas','$2y$12$XZWRqvXpBqAbC2UOy5lOYuVvx8oG3HEQLZNRzAUSUHr1BXLY5X6'),
-    ('carlos.mejia','$2y$12$XZWRqvXpBqAbC2UOy5lOYuVvx8oG3HEQLZNRzAUSUHr1BXLY5X6'),
-    ('lucia.torres','$2y$12$XZWRqvXpBqAbC2UOy5lOYuVvx8oG3HEQLZNRzAUSUHr1BXLY5X6'),
-    ('andres.mora','$2y$12$XZWRqvXpBqAbC2UOy5lOYuVvx8oG3HEQLZNRzAUSUHr1BXLY5X6'),
-    ('carolina.gil','$2y$12$XZWRqvXpBqAbC2UOy5lOYuVvx8oG3HEQLZNRzAUSUHr1BXLY5X6'),
-    ('felipe.ruiz','$2y$12$XZWRqvXpBqAbC2UOy5lOYuVvx8oG3HEQLZNRzAUSUHr1BXLY5X6'),
-    ('natalia.santos','$2y$12$XZWRqvXpBqAbC2UOy5lOYuVvx8oG3HEQLZNRzAUSUHr1BXLY5X6'),
-    ('ana.martinez','$2y$12$XZWRqvXpBqAbC2UOy5lOYuVvx8oG3HEQLZNRzAUSUHr1BXLY5X6'),
-    ('luis.gomez','$2y$12$XZWRqvXpBqAbC2UOy5lOYuVvx8oG3HEQLZNRzAUSUHr1BXLY5X6'),
-    ('laura.ramirez','$2y$12$XZWRqvXpBqAbC2UOy5lOYuVvx8oG3HEQLZNRzAUSUHr1BXLY5X6'),
-    ('miguel.perez','$2y$12$XZWRqvXpBqAbC2UOy5lOYuVvx8oG3HEQLZNRzAUSUHr1BXLY5X6'),
-    ('sofia.lopez','$2y$12$XZWRqvXpBqAbC2UOy5lOYuVvx8oG3HEQLZNRzAUSUHr1BXLY5X6'),
-    ('juan.hernandez','$2y$12$XZWRqvXpBqAbC2UOy5lOYuVvx8oG3HEQLZNRzAUSUHr1BXLY5X6'),
-    ('valentina.diaz','$2y$12$XZWRqvXpBqAbC2UOy5lOYuVvx8oG3HEQLZNRzAUSUHr1BXLY5X6');
+    ('99999999','$2y$10$A4P0l0Rq7JY7V.eiepyu1OmjL2iZsGfiSElvAm34q7tSONBezR.OC'),
+    ('diana.rojas','$2y$10$A4P0l0Rq7JY7V.eiepyu1OmjL2iZsGfiSElvAm34q7tSONBezR.OC'),
+    ('carlos.mejia','$2y$10$A4P0l0Rq7JY7V.eiepyu1OmjL2iZsGfiSElvAm34q7tSONBezR.OC'),
+    ('lucia.torres','$2y$10$A4P0l0Rq7JY7V.eiepyu1OmjL2iZsGfiSElvAm34q7tSONBezR.OC'),
+    ('andres.mora','$2y$10$A4P0l0Rq7JY7V.eiepyu1OmjL2iZsGfiSElvAm34q7tSONBezR.OC'),
+    ('carolina.gil','$2y$10$A4P0l0Rq7JY7V.eiepyu1OmjL2iZsGfiSElvAm34q7tSONBezR.OC'),
+    ('felipe.ruiz','$2y$10$A4P0l0Rq7JY7V.eiepyu1OmjL2iZsGfiSElvAm34q7tSONBezR.OC'),
+    ('natalia.santos','$2y$10$A4P0l0Rq7JY7V.eiepyu1OmjL2iZsGfiSElvAm34q7tSONBezR.OC'),
+    ('ana.martinez','$2y$10$A4P0l0Rq7JY7V.eiepyu1OmjL2iZsGfiSElvAm34q7tSONBezR.OC'),
+    ('luis.gomez','$2y$10$A4P0l0Rq7JY7V.eiepyu1OmjL2iZsGfiSElvAm34q7tSONBezR.OC'),
+    ('laura.ramirez','$2y$10$A4P0l0Rq7JY7V.eiepyu1OmjL2iZsGfiSElvAm34q7tSONBezR.OC'),
+    ('miguel.perez','$2y$10$A4P0l0Rq7JY7V.eiepyu1OmjL2iZsGfiSElvAm34q7tSONBezR.OC'),
+    ('sofia.lopez','$2y$10$A4P0l0Rq7JY7V.eiepyu1OmjL2iZsGfiSElvAm34q7tSONBezR.OC'),
+    ('juan.hernandez','$2y$10$A4P0l0Rq7JY7V.eiepyu1OmjL2iZsGfiSElvAm34q7tSONBezR.OC'),
+    ('valentina.diaz','$2y$10$A4P0l0Rq7JY7V.eiepyu1OmjL2iZsGfiSElvAm34q7tSONBezR.OC');
 
 -- IDs de usuario: administrador 1, médicos 2 a 8 y afiliados 9 a 15.
 -- ID del tipo de documento CC: 4.
@@ -264,29 +270,34 @@ INSERT INTO medico (id_usuario, id_tipo_doc, num_documento, nombre1, apellido1, 
     (7,4,'90000006','Felipe','Ruiz','3005550100','felipe.ruiz@eps.local',5,6),
     (8,4,'90000007','Natalia','Santos','3005550100','natalia.santos@eps.local',6,7);
 
--- Un afiliado individual como ejemplo del INSERT.
--- Las tarifas A, B y C tienen IDs 1, 2 y 3, respectivamente.
-INSERT INTO afiliado (id_usuario, id_tipo_doc, num_doc, nombre1, apellido1, fecha_nacimiento, telefono, correo, direccion, ingreso_mensual, id_tarifa, estado_afiliacion)
-VALUES (9,4,'10000001','Ana','Martínez',DATE '1995-01-02','3005550001','ana.martinez@correo.local','Villavicencio',800000,1,'Activo');
 
--- Seis afiliados adicionales completan las 15 cuentas y representan las categorías.
-INSERT INTO afiliado (id_usuario, id_tipo_doc, num_doc, nombre1, apellido1, fecha_nacimiento, telefono, correo, direccion, ingreso_mensual, id_tarifa, estado_afiliacion) VALUES
-    (10,4,'10000002','Luis','Gómez',DATE '1994-05-12','3005550002','luis.gomez@correo.local','Villavicencio',900000,1,'Pendiente'),
-    (11,4,'10000003','Laura','Ramírez',DATE '1992-06-18','3005550003','laura.ramirez@correo.local','Villavicencio',1800000,2,'Activo'),
-    (12,4,'10000004','Miguel','Pérez',DATE '1990-07-24','3005550004','miguel.perez@correo.local','Villavicencio',1800000,2,'Pendiente'),
-    (13,4,'10000005','Sofía','López',DATE '1996-08-30','3005550005','sofia.lopez@correo.local','Villavicencio',2200000,2,'Pendiente'),
-    (14,4,'10000006','Juan','Hernández',DATE '1988-09-14','3005550006','juan.hernandez@correo.local','Villavicencio',3200000,3,'Activo'),
-    (15,4,'10000007','Valentina','Díaz',DATE '1998-10-21','3005550007','valentina.diaz@correo.local','Villavicencio',3200000,3,'Pendiente');
+-- Perfiles de afiliados de demostración. Las categorías muestran rangos A, B y C.
+INSERT INTO afiliado (id_usuario,id_tipo_doc,num_doc,nombre1,apellido1,fecha_nacimiento,telefono,correo,direccion,id_tarifa,estado_afiliacion)
+VALUES (9,4,'10000001','Ana','Martínez',DATE '1995-01-02','3005550001','ana.martinez@correo.local','Villavicencio',1,'Activo');
 
--- Un historial de muestra para cada afiliado.
-INSERT INTO historial (id_afiliado, alergias, grupo_sanguineo, antecedentes) VALUES
-    (1,'Sin alergias registradas','O+','Sin antecedentes registrados'),
-    (2,'Sin alergias registradas','O+','Sin antecedentes registrados'),
-    (3,'Sin alergias registradas','O+','Sin antecedentes registrados'),
-    (4,'Sin alergias registradas','O+','Sin antecedentes registrados'),
-    (5,'Sin alergias registradas','O+','Sin antecedentes registrados'),
-    (6,'Sin alergias registradas','O+','Sin antecedentes registrados'),
-    (7,'Sin alergias registradas','O+','Sin antecedentes registrados');
+INSERT INTO afiliado (id_usuario,id_tipo_doc,num_doc,nombre1,apellido1,fecha_nacimiento,telefono,correo,direccion,id_tarifa,estado_afiliacion)
+VALUES (10,4,'10000002','Luis','Gómez',DATE '1990-04-12','3005550002','luis.gomez@correo.local','Villavicencio',2,'Activo');
+
+INSERT INTO afiliado (id_usuario,id_tipo_doc,num_doc,nombre1,apellido1,fecha_nacimiento,telefono,correo,direccion,id_tarifa,estado_afiliacion)
+VALUES (11,4,'10000003','Laura','Ramírez',DATE '1988-08-20','3005550003','laura.ramirez@correo.local','Villavicencio',3,'Activo');
+
+INSERT INTO afiliado (id_usuario,id_tipo_doc,num_doc,nombre1,apellido1,fecha_nacimiento,telefono,correo,direccion,id_tarifa,estado_afiliacion)
+VALUES (12,4,'10000004','Miguel','Pérez',DATE '1992-11-05','3005550004','miguel.perez@correo.local','Villavicencio',2,'Pendiente');
+
+INSERT INTO afiliado (id_usuario,id_tipo_doc,num_doc,nombre1,apellido1,fecha_nacimiento,telefono,correo,direccion,id_tarifa,estado_afiliacion)
+VALUES (13,4,'10000005','Sofía','López',DATE '1998-02-14','3005550005','sofia.lopez@correo.local','Villavicencio',1,'Pendiente');
+
+INSERT INTO afiliado (id_usuario,id_tipo_doc,num_doc,nombre1,apellido1,fecha_nacimiento,telefono,correo,direccion,id_tarifa,estado_afiliacion)
+VALUES (14,4,'10000006','Juan','Hernández',DATE '1985-06-30','3005550006','juan.hernandez@correo.local','Villavicencio',2,'Pendiente');
+
+INSERT INTO afiliado (id_usuario,id_tipo_doc,num_doc,nombre1,apellido1,fecha_nacimiento,telefono,correo,direccion,id_tarifa,estado_afiliacion)
+VALUES (15,4,'10000007','Valentina','Díaz',DATE '1996-09-18','3005550007','valentina.diaz@correo.local','Villavicencio',3,'Pendiente');
+
+
+-- Crea un historial solo para cada afiliado que sí tenga perfil en la tabla afiliado.
+INSERT INTO historial (id_afiliado, alergias, grupo_sanguineo, antecedentes)
+SELECT id_afiliado,'Sin alergias registradas','O+','Sin antecedentes registrados'
+FROM afiliado;
 
 -- Estado Disponible tiene ID 1; cada médico recibe un horario inicial.
 INSERT INTO horario (id_medico, fecha, hora_inicio, hora_fin, id_estado) VALUES
@@ -392,21 +403,22 @@ FOR EACH ROW EXECUTE FUNCTION disparador_limpieza_horarios_vencidos();
 GRANT EXECUTE ON FUNCTION limpiar_horarios_vencidos() TO eps_app;
 
 
--- Copago automático (máximo $10.000)
+-- Copago automático con porcentaje y tope según la categoría del afiliado.
 CREATE FUNCTION calcular_valor_cita() RETURNS TRIGGER AS $$
 DECLARE
     costo NUMERIC(10,2);
     porcentaje NUMERIC(5,2);
+    tope NUMERIC(12,2);
 BEGIN
-    SELECT s.costo_base, t.porcentaje_cobro INTO costo, porcentaje
+    SELECT s.costo_base, t.porcentaje_cobro, t.tope_copago INTO costo, porcentaje, tope
     FROM servicio s
     JOIN afiliado a ON a.id_afiliado=NEW.id_afiliado
     JOIN tarifa t ON t.id_tarifa=a.id_tarifa
     WHERE s.id_servicio=NEW.id_servicio;
-    IF costo IS NULL OR porcentaje IS NULL THEN
+    IF costo IS NULL OR porcentaje IS NULL OR tope IS NULL THEN
         RAISE EXCEPTION 'No se encontró el servicio o la tarifa del afiliado.';
     END IF;
-    NEW.valor_cobrado := LEAST(ROUND(costo * porcentaje / 100, 2), 10000.00);
+    NEW.valor_cobrado := LEAST(ROUND(costo * porcentaje / 100, 2), tope);
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
@@ -426,17 +438,19 @@ DECLARE
 BEGIN
     IF TG_OP <> 'INSERT' THEN
         horario_actual := OLD.id_horario;
+        IF horario_actual IS NOT NULL THEN
         SELECT id_estado INTO nuevo_estado FROM estado
         WHERE ambito='horario'
-          AND nombre=CASE WHEN EXISTS (SELECT 1 FROM cita WHERE id_horario=horario_actual)
+          AND nombre=CASE WHEN EXISTS (SELECT 1 FROM cita c JOIN estado ec ON ec.id_estado=c.id_estado WHERE c.id_horario=horario_actual AND ec.ambito='cita' AND ec.nombre IN ('Programada','Atendida'))
                           THEN 'Ocupado' ELSE 'Disponible' END;
         UPDATE horario SET id_estado=nuevo_estado WHERE id_horario=horario_actual;
+        END IF;
     END IF;
-    IF TG_OP <> 'DELETE' THEN
+    IF TG_OP <> 'DELETE' AND NEW.id_horario IS NOT NULL THEN
         horario_actual := NEW.id_horario;
         SELECT id_estado INTO nuevo_estado FROM estado
         WHERE ambito='horario'
-          AND nombre=CASE WHEN EXISTS (SELECT 1 FROM cita WHERE id_horario=horario_actual)
+          AND nombre=CASE WHEN EXISTS (SELECT 1 FROM cita c JOIN estado ec ON ec.id_estado=c.id_estado WHERE c.id_horario=horario_actual AND ec.ambito='cita' AND ec.nombre IN ('Programada','Atendida'))
                           THEN 'Ocupado' ELSE 'Disponible' END;
         UPDATE horario SET id_estado=nuevo_estado WHERE id_horario=horario_actual;
     END IF;
@@ -454,6 +468,84 @@ FOR EACH ROW EXECUTE FUNCTION actualizar_estado_horario();
 INSERT INTO cita (id_afiliado, id_servicio, id_horario, id_estado)
 VALUES (1,1,1,3);
 
+
+-- Si se elimina un horario reservado, conserva la cita y la deja pendiente de reprogramar.
+CREATE OR REPLACE FUNCTION conservar_cita_al_eliminar_horario()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    estado_reprogramar SMALLINT;
+BEGIN
+    SELECT id_estado INTO estado_reprogramar
+    FROM estado WHERE ambito='cita' AND nombre='Reprogramacion';
+    UPDATE cita c
+    SET fecha_hora_anterior = OLD.fecha + OLD.hora_inicio,
+        medico_anterior = m.nombre1 || ' ' || m.apellido1,
+        id_horario = NULL,
+        id_estado = CASE WHEN c.id_estado = (SELECT id_estado FROM estado WHERE ambito='cita' AND nombre='Programada')
+                         THEN estado_reprogramar ELSE c.id_estado END
+    FROM medico m
+    WHERE c.id_horario = OLD.id_horario
+      AND m.id_medico = OLD.id_medico;
+    RETURN OLD;
+END;
+$$;
+
+CREATE TRIGGER trg_conservar_cita_al_eliminar_horario
+BEFORE DELETE ON horario
+FOR EACH ROW EXECUTE FUNCTION conservar_cita_al_eliminar_horario();
+
+-- Guarda quién hizo cada cambio y los datos anteriores y nuevos.
+CREATE TABLE auditoria_cambios (
+    id_log BIGSERIAL PRIMARY KEY,
+    tabla VARCHAR(50) NOT NULL,
+    accion VARCHAR(10) NOT NULL CHECK (accion IN ('INSERT','UPDATE','DELETE')),
+    fecha TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    usuario_bd VARCHAR(100) NOT NULL DEFAULT session_user,
+    datos_anteriores JSONB,
+    datos_nuevos JSONB
+);
+
+CREATE OR REPLACE FUNCTION registrar_cambio_auditoria()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    antes JSONB;
+    despues JSONB;
+BEGIN
+    IF TG_OP IN ('UPDATE','DELETE') THEN antes := to_jsonb(OLD); END IF;
+    IF TG_OP IN ('INSERT','UPDATE') THEN despues := to_jsonb(NEW); END IF;
+    -- Evita guardar hashes de contraseña en la auditoría.
+    IF TG_TABLE_NAME = 'usuario' THEN
+        antes := antes - 'password_hash';
+        despues := despues - 'password_hash';
+    END IF;
+    INSERT INTO auditoria_cambios(tabla, accion, usuario_bd, datos_anteriores, datos_nuevos)
+    VALUES (TG_TABLE_NAME, TG_OP, session_user, antes, despues);
+    RETURN NULL;
+END;
+$$;
+
+-- Solo se registran operaciones posteriores a la carga inicial de demostración.
+CREATE TRIGGER aud_usuario AFTER INSERT OR UPDATE OR DELETE ON usuario FOR EACH ROW EXECUTE FUNCTION registrar_cambio_auditoria();
+CREATE TRIGGER aud_afiliado AFTER INSERT OR UPDATE OR DELETE ON afiliado FOR EACH ROW EXECUTE FUNCTION registrar_cambio_auditoria();
+CREATE TRIGGER aud_medico AFTER INSERT OR UPDATE OR DELETE ON medico FOR EACH ROW EXECUTE FUNCTION registrar_cambio_auditoria();
+CREATE TRIGGER aud_historial AFTER INSERT OR UPDATE OR DELETE ON historial FOR EACH ROW EXECUTE FUNCTION registrar_cambio_auditoria();
+CREATE TRIGGER aud_horario AFTER INSERT OR UPDATE OR DELETE ON horario FOR EACH ROW EXECUTE FUNCTION registrar_cambio_auditoria();
+CREATE TRIGGER aud_cita AFTER INSERT OR UPDATE OR DELETE ON cita FOR EACH ROW EXECUTE FUNCTION registrar_cambio_auditoria();
+CREATE TRIGGER aud_tipo_documento AFTER INSERT OR UPDATE OR DELETE ON tipo_documento FOR EACH ROW EXECUTE FUNCTION registrar_cambio_auditoria();
+CREATE TRIGGER aud_estado AFTER INSERT OR UPDATE OR DELETE ON estado FOR EACH ROW EXECUTE FUNCTION registrar_cambio_auditoria();
+CREATE TRIGGER aud_tarifa AFTER INSERT OR UPDATE OR DELETE ON tarifa FOR EACH ROW EXECUTE FUNCTION registrar_cambio_auditoria();
+CREATE TRIGGER aud_especialidad AFTER INSERT OR UPDATE OR DELETE ON especialidad FOR EACH ROW EXECUTE FUNCTION registrar_cambio_auditoria();
+CREATE TRIGGER aud_servicio AFTER INSERT OR UPDATE OR DELETE ON servicio FOR EACH ROW EXECUTE FUNCTION registrar_cambio_auditoria();
+CREATE TRIGGER aud_servicio_especialidad AFTER INSERT OR UPDATE OR DELETE ON servicio_especialidad FOR EACH ROW EXECUTE FUNCTION registrar_cambio_auditoria();
+CREATE TRIGGER aud_consultorio AFTER INSERT OR UPDATE OR DELETE ON consultorio FOR EACH ROW EXECUTE FUNCTION registrar_cambio_auditoria();
+CREATE TRIGGER aud_consultorio_especialidad AFTER INSERT OR UPDATE OR DELETE ON consultorio_especialidad FOR EACH ROW EXECUTE FUNCTION registrar_cambio_auditoria();
+
 -- Permisos de conexión y grupos PostgreSQL.
 DO $$ BEGIN
     EXECUTE format(
@@ -464,6 +556,8 @@ END $$;
 GRANT USAGE ON SCHEMA public TO eps_app, eps_lectura, eps_paciente, eps_medico, eps_administrador;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO eps_app;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO eps_app;
+REVOKE INSERT, UPDATE, DELETE ON auditoria_cambios FROM eps_app;
+GRANT SELECT ON auditoria_cambios TO eps_app, eps_administrador;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO eps_lectura;
 GRANT SELECT ON tipo_documento, estado, tarifa, especialidad, servicio, servicio_especialidad, consultorio,
     consultorio_especialidad, horario, afiliado, medico, cita, historial TO eps_paciente;
