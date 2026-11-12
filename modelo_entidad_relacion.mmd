@@ -19,8 +19,17 @@ erDiagram
     MEDICO ||--o{ HORARIO : programa
     AFILIADO ||--o{ CITA : reserva
     SERVICIO ||--o{ CITA : solicita
-    HORARIO ||--o| CITA : ocupa
+    HORARIO o|--o| CITA : ocupa
 
+    AUDITORIA_CAMBIOS {
+        bigint id_log PK
+        varchar tabla
+        varchar accion
+        timestamptz fecha
+        varchar usuario_bd
+        jsonb datos_anteriores
+        jsonb datos_nuevos
+    }
     ESTADO {
         smallint id_estado PK
         varchar nombre
@@ -37,6 +46,7 @@ erDiagram
         numeric ingreso_min
         numeric ingreso_max
         numeric porcentaje_cobro
+        numeric tope_copago
     }
     ESPECIALIDAD {
         smallint id_especialidad PK
@@ -77,7 +87,6 @@ erDiagram
         varchar num_doc
         varchar nombre1
         varchar apellido1
-        numeric ingreso_mensual
         varchar estado_afiliacion
         smallint id_tarifa FK
     }
@@ -112,7 +121,9 @@ erDiagram
         integer id_cita PK
         integer id_afiliado FK
         smallint id_servicio FK
-        integer id_horario FK, UK
+        integer id_horario FK, UK nullable
+        timestamp fecha_hora_anterior
+        varchar medico_anterior
         timestamp fecha_solicitud
         smallint id_estado FK
         numeric valor_cobrado
