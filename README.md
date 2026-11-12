@@ -201,6 +201,7 @@ erDiagram
         numeric ingreso_min
         numeric ingreso_max
         numeric porcentaje_cobro
+        numeric tope_copago
     }
     ESPECIALIDAD {
         smallint id_especialidad PK
@@ -275,7 +276,7 @@ erDiagram
         integer id_cita PK
         integer id_afiliado FK
         smallint id_servicio FK
-        integer id_horario FK, UK nullable
+        integer id_horario FK, UK
         timestamp fecha_hora_anterior
         varchar medico_anterior
         timestamp fecha_solicitud
