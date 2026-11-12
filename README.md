@@ -14,6 +14,10 @@ Proyecto académico desarrollado con PHP, PostgreSQL, HTML, CSS y JavaScript nat
 - Configuración de horarios de atención.
 - Reserva, consulta y cancelación de citas.
 - Registro del resultado de atención por parte del médico.
+- Auditoría automática de cambios en usuarios, afiliados, médicos, historias, catálogos, consultorios, horarios y citas.
+- Reprogramación de citas cuando se elimina un horario reservado.
+- Consulta integral del historial de citas desde administración.
+- Cambio de contraseña para cada perfil y baja segura de médicos.
 - Copago calculado automáticamente según el servicio y la categoría del afiliado.
 - Filtro de horarios disponibles según el servicio y la especialidad que lo atiende.
 
@@ -64,11 +68,26 @@ php -S 127.0.0.1:8000
 
 Abre <http://127.0.0.1:8000>. El servidor escucha solo en `127.0.0.1`, por lo que la aplicación se usa localmente. Detén el servidor con `Ctrl+C`.
 
+> Esta versión añade el tope de copago a `tarifa` y elimina el campo de monto salarial de `afiliado`. Para conservar una base anterior, haz primero una copia y ejecuta una sola vez, conectado a esa base:
+>
+> ```sql
+> BEGIN;
+> ALTER TABLE afiliado DROP COLUMN IF EXISTS ingreso_mensual;
+> ALTER TABLE tarifa ADD COLUMN IF NOT EXISTS tope_copago NUMERIC(12,2);
+> UPDATE tarifa SET ingreso_min=0, ingreso_max=3501809.99, porcentaje_cobro=11.50, tope_copago=373715 WHERE nombre='Categoría A';
+> UPDATE tarifa SET ingreso_min=3501810, ingreso_max=8754525, porcentaje_cobro=17.30, tope_copago=1497644 WHERE nombre='Categoría B';
+> UPDATE tarifa SET ingreso_min=8754525.01, ingreso_max=9999999999.99, porcentaje_cobro=23.00, tope_copago=2995409 WHERE nombre='Categoría C';
+> ALTER TABLE tarifa ALTER COLUMN tope_copago SET NOT NULL;
+> COMMIT;
+> ```
+>
+> Los montos salariales guardados se eliminan; la categoría de cada afiliado permanece. Para una base nueva, importa `proyecto.sql` una sola vez.
+
 `config.php` usa por defecto la base `eps_villavicencio` y el usuario local `eps_app`. Si necesitas otros datos de conexión, puedes definir las variables `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER` y `DB_PASSWORD` antes de iniciar PHP.
 
 ## Cuentas de demostración
 
-Todas las cuentas de ejemplo usan la clave `2345`.
+Las cuentas de demostración usan la clave `2345`. Para probar el portal de afiliado, selecciona **CC**, escribe **10000001** y la contraseña **2345**. Esa es la afiliación de ejemplo que tiene perfil completo y está activa.
 
 | Perfil | Tipo y número de documento | Clave |
 |---|---|---|
@@ -76,7 +95,9 @@ Todas las cuentas de ejemplo usan la clave `2345`.
 | Médicos de demostración | CC `90000001` a `90000007` | `2345` |
 | Afiliados de demostración | CC `10000001` a `10000007` | `2345` |
 
-El SQL inicializa 15 cuentas en total: un administrador, siete médicos y siete afiliados. Las cuentas usan documentos CC consecutivos: médicos `90000001` a `90000007` y afiliados `10000001` a `10000007`. Todas usan la clave `2345`. Los afiliados `10000001`, `10000003` y `10000006` están activos para probar las categorías A, B y C; los demás quedan pendientes para que se pueda mostrar la revisión administrativa.
+El SQL crea 15 cuentas completas: un administrador, siete médicos y siete afiliados. Los tres primeros afiliados están activos para probar las categorías A, B y C; los cuatro restantes quedan pendientes para que se pueda demostrar su aprobación. Todas las claves de demostración son `2345`.
+
+> **Nota del modelo:** La Circular 048 de 2025 del Ministerio de Salud establece estos porcentajes y topes de copago para 2026. El proyecto los usa como ejercicio académico: no separa cotizantes y beneficiarios, no calcula cuotas moderadoras y aplica el porcentaje al valor base del servicio. Consulta la [Circular 048 de 2025](https://www.minsalud.gov.co/Normatividad_Nuevo/Circular%20048%20de%202025.pdf) para el contexto y las reglas completas.
 
 ## Perfiles y funciones
 
@@ -86,12 +107,14 @@ El SQL inicializa 15 cuentas en total: un administrador, siete médicos y siete 
 - Consulta y actualiza sus datos personales.
 - Reserva citas cuando su afiliación está activa.
 - Consulta sus citas, copagos e historia clínica.
-- Cancela sus citas programadas.
+- Cancela sus citas programadas; quedan guardadas con estado Cancelada para conservar el historial.
+- Cambia su contraseña desde el módulo correspondiente.
 
 ### Médico
 
 - Consulta las citas asignadas a su agenda.
 - Registra el resultado de la cita atendida.
+- Cambia su contraseña desde su panel.
 - No crea afiliados ni modifica médicos, consultorios u horarios.
 
 ### Administrador
@@ -99,7 +122,10 @@ El SQL inicializa 15 cuentas en total: un administrador, siete médicos y siete 
 - Busca afiliados, revisa solicitudes y actualiza su estado después de verificar el pago externo.
 - Registra y actualiza afiliados.
 - Crea cuentas médicas y las asocia con especialidades y consultorios.
-- Configura los horarios de atención.
+- Configura o elimina horarios. Si un horario eliminado tenía una cita, esta se conserva con estado Reprogramacion y se le puede asignar otro espacio disponible.
+- Consulta el registro histórico de citas y los últimos cambios de auditoría.
+- Da de baja a un médico: bloquea su acceso y conserva sus datos e historial.
+- Cambia su contraseña desde su panel.
 
 ## Roles y permisos en PostgreSQL
 
@@ -109,16 +135,18 @@ Los permisos de la interfaz restringen las acciones disponibles para cada perfil
 
 ## Reglas del sistema
 
-- Categoría A: ingresos hasta $1.000.000.
-- Categoría B: ingresos superiores a $1.000.000 y hasta $2.500.000.
-- Categoría C: ingresos superiores a $2.500.000.
-- El copago depende de la categoría y del servicio, con un máximo de $10.000 por cita.
+- SMMLV usado como referencia 2026: $1.750.905 COP.
+- Categoría A: menos de 2 SMMLV, hasta $3.501.809,99; porcentaje 11,5 % y tope de $373.715 por evento.
+- Categoría B: entre 2 y 5 SMMLV, de $3.501.810 a $8.754.525; porcentaje 17,3 % y tope de $1.497.644 por evento.
+- Categoría C: más de 5 SMMLV, superior a $8.754.525; porcentaje 23 % y tope de $2.995.409 por evento.
+- El afiliado o el administrador selecciona la categoría según el rango declarado; la aplicación no pide ni almacena un monto de salario. El copago se calcula con el costo del servicio, el porcentaje y el tope guardados en `tarifa`.
 - La afiliación permanece Pendiente hasta que el administrador confirme el pago externo.
 - Los horarios se muestran según la especialidad correspondiente al servicio elegido.
 - Un horario se reserva para una sola cita.
 - Un afiliado no puede tener citas pendientes con horarios que se crucen; puede reservar varias el mismo día si una termina antes de que comience la siguiente.
-- Los nombres no aceptan números; documentos, teléfonos, fechas e ingresos se validan en los formularios y en la base de datos.
-- Los disparadores calculan el copago, actualizan el estado del horario y eliminan horarios disponibles que ya vencieron.
+- Los nombres no aceptan números; documentos, teléfonos y fechas se validan en los formularios y en la base de datos.
+- El copago toma el porcentaje y el tope por evento definidos para la categoría asignada.
+- Los disparadores calculan el copago, actualizan el estado del horario, conservan citas al borrar un horario y guardan auditoría de las operaciones principales.
 
 ## Modelo entidad-relación
 
@@ -146,8 +174,17 @@ erDiagram
     MEDICO ||--o{ HORARIO : programa
     AFILIADO ||--o{ CITA : reserva
     SERVICIO ||--o{ CITA : solicita
-    HORARIO ||--o| CITA : ocupa
+    HORARIO o|--o| CITA : ocupa
 
+    AUDITORIA_CAMBIOS {
+        bigint id_log PK
+        varchar tabla
+        varchar accion
+        timestamptz fecha
+        varchar usuario_bd
+        jsonb datos_anteriores
+        jsonb datos_nuevos
+    }
     ESTADO {
         smallint id_estado PK
         varchar nombre
@@ -204,7 +241,6 @@ erDiagram
         varchar num_doc
         varchar nombre1
         varchar apellido1
-        numeric ingreso_mensual
         varchar estado_afiliacion
         smallint id_tarifa FK
     }
@@ -239,7 +275,9 @@ erDiagram
         integer id_cita PK
         integer id_afiliado FK
         smallint id_servicio FK
-        integer id_horario FK, UK
+        integer id_horario FK, UK nullable
+        timestamp fecha_hora_anterior
+        varchar medico_anterior
         timestamp fecha_solicitud
         smallint id_estado FK
         numeric valor_cobrado
@@ -252,7 +290,7 @@ La fuente Mermaid completa, con los campos de las entidades, está en [modelo_en
 
 | Archivo | Propósito |
 |---|---|
-| `proyecto.sql` | Crea las tablas, relaciones, restricciones, grupos PostgreSQL, disparadores y datos de demostración. |
+| `proyecto.sql` | Crea las tablas, relaciones, restricciones, grupos PostgreSQL, disparadores de auditoría y citas, y datos de demostración. |
 | `index.php` | Contiene los formularios y los paneles de afiliado, médico y administrador. |
 | `Database.php` y `config.php` | Gestionan la conexión PHP con PostgreSQL. |
 | `assets/app.css` | Estilos de la interfaz. |
@@ -261,3 +299,22 @@ La fuente Mermaid completa, con los campos de las entidades, está en [modelo_en
 | `INFORME.md` | Informe académico, modelo relacional y diccionario de datos. |
 
 > Las claves incluidas son únicamente para datos locales de demostración. Cámbialas antes de usar el sistema con información real y no publiques datos personales.
+
+## Cómo se conecta PHP con PostgreSQL
+
+La conexión está separada en dos archivos. `config.php` lee el host, puerto, nombre de base, usuario y clave desde variables de entorno (y tiene valores locales para esta práctica). `Database.php` incluye ese arreglo, crea el objeto `PDO` y guarda la conexión en una propiedad estática. Así, durante una petición HTTP, las consultas reutilizan una única conexión. PDO está configurado para lanzar excepciones ante errores y devolver filas asociativas.
+
+Las consultas que reciben datos del navegador usan `prepare()` y `execute()` para enviar los valores como parámetros. Las claves se guardan mediante `password_hash()` y se verifican con `password_verify()`; el hash nunca se incluye en los registros de auditoría.
+
+## Módulos del panel
+
+Después del inicio de sesión, el menú permite saltar a las tareas propias del perfil. El administrador tiene Resumen, Afiliados, Médicos y salas, Horarios, Citas y Auditoría. El afiliado tiene Resumen, Agendar cita, Mis citas y Cambiar contraseña. El médico tiene Mi agenda, Mis horarios (solo lectura), Atenciones registradas y Cambiar contraseña. Los permisos de cada acción también se verifican en el backend antes de ejecutar el SQL.
+
+La tabla `auditoria_cambios` almacena fecha, acción, tabla, usuario PostgreSQL y los valores anteriores/nuevos en JSON. La base conserva esa información incluso si se cancela una cita o se elimina su horario. Cada médico puede consultar sus horarios asignados, la disponibilidad, el estado de la cita, el paciente y el servicio; esta vista no ofrece acciones para editar o eliminar horarios. La baja de médicos se hace desactivando la cuenta y retirando sus horarios futuros; no se borran sus citas ni su perfil histórico.
+
+
+## Administración de usuarios y citas
+
+Los enlaces laterales muestran únicamente el módulo seleccionado. La sección de afiliados reúne el listado completo, búsqueda, creación, edición, cambio de contraseña y eliminación de acceso. Al eliminar un afiliado se desactiva su cuenta, la fila queda marcada en rojo y los datos permanecen para conservar el historial. Las citas futuras de ese afiliado también quedan como `Eliminada` y se resaltan en rojo; las citas atendidas se conservan como historial.
+
+Para obtener los siete perfiles de afiliado de demostración y el estado `Eliminada`, crea nuevamente la base e importa el SQL actualizado, porque `proyecto.sql` es el archivo de instalación inicial.
